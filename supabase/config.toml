@@ -1,0 +1,6 @@
+project_id = "pfrvrpumdnonpnxpvkct"
+
+[functions]
+
+[functions.create-lead-from-form]
+verify_jwt = false
