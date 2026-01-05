@@ -35,11 +35,13 @@ import NotFound from "./pages/NotFound";
 import { InventoryStockApproval } from "./components/InventoryStockApproval";
 import FormEmbedIntegration from "./pages/FormEmbedIntegration";
 import { GlobalLoaderProvider } from "./context/GlobalLoaderContext";
+import { StaffProvider } from "./context/StaffContext";
 import { supabase } from "./lib/supabase";
 import { useEffect } from "react";
 import Insights from "./pages/Insights";
 import Onboarding from "./pages/Onboarding";
 import { useQueryClient } from "@tanstack/react-query";
+import Contracts from "./pages/Contracts";
 
 
 
@@ -187,60 +189,58 @@ function OnboardingGuard() {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-  <SessionTracker />
-  <SupabaseRealtimeSync />
-    <GlobalLoaderProvider>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-      <OnboardingGuard />
-        <Routes>
-          <Route path="/" element={<Auth />} />
-          <Route path="/auth" element={<Auth />} />
-          <Route path="/onboarding" element={<Onboarding />} />
-          <Route path="/dashboard" element={<DashboardLayout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="form-integration" element={<FormEmbedIntegration />} />
-            <Route path="inventory-approval" element={<div className="p-6"><InventoryStockApproval /></div>} />
-            <Route path="leads" element={<Leads />} />
-            <Route path="customers" element={<Customers />} />
-            <Route path="pipeline" element={<Pipeline />} />
-            <Route path="tasks" element={<Tasks />} />
-            <Route path="quotations" element={<Quotations />} />
-
-            <Route path="products" element={<Products />} />
-            <Route path="vendors" element={<Vendors />} />
-            <Route path="price-books" element={<PriceBooks />} />
-            <Route path="sales-orders" element={<SalesOrders />} />
-            <Route path="purchase-orders" element={<PurchaseOrders />} />
-            <Route path="calls" element={<Calls />} />
-            <Route path="tickets" element={<Tickets />} />
-            <Route path="calendar" element={<Calendar />} />
-            <Route path="reports" element={<Reports />} />
-            <Route path="hr/employees" element={<Employees />} />
-            <Route path="hr/departments" element={<Departments />} />
-            <Route path="hr/attendance" element={<Attendance />} />
-            <Route path="hr/leave" element={<Leave />} />
-            <Route path="hr/payroll" element={<Payroll />} />
-            <Route path="daily-logs" element={<DailyLogs />} />
-            <Route path="monthly-analytics" element={<Analytics />} />
-            <Route path="analytics" element={<Analytics />} />
-            <Route path="papers" element={<Papers />} />
-            <Route path="company-settings" element={<CompanySettings />} />
-            <Route path="settings" element={<CompanySettings />} />
-            <Route path="profile" element={<Profile />} />
-            <Route path="insights" element={<Insights />} />
-
-            
-          </Route>
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-          
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-    </GlobalLoaderProvider>
+    <StaffProvider>
+      <SessionTracker />
+      <SupabaseRealtimeSync />
+      <GlobalLoaderProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <OnboardingGuard />
+            <Routes>
+              <Route path="/" element={<Auth />} />
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/onboarding" element={<Onboarding />} />
+              <Route path="/dashboard" element={<DashboardLayout />}>
+                <Route index element={<Dashboard />} />
+                <Route path="form-integration" element={<FormEmbedIntegration />} />
+                <Route path="inventory-approval" element={<div className="p-6"><InventoryStockApproval /></div>} />
+                <Route path="leads" element={<Leads />} />
+                <Route path="customers" element={<Customers />} />
+                <Route path="pipeline" element={<Pipeline />} />
+                <Route path="tasks" element={<Tasks />} />
+                <Route path="quotations" element={<Quotations />} />
+                <Route path="products" element={<Products />} />
+                <Route path="vendors" element={<Vendors />} />
+                <Route path="price-books" element={<PriceBooks />} />
+                <Route path="sales-orders" element={<SalesOrders />} />
+                <Route path="purchase-orders" element={<PurchaseOrders />} />
+                <Route path="calls" element={<Calls />} />
+                <Route path="tickets" element={<Tickets />} />
+                <Route path="calendar" element={<Calendar />} />
+                <Route path="reports" element={<Reports />} />
+                <Route path="hr/employees" element={<Employees />} />
+                <Route path="hr/departments" element={<Departments />} />
+                <Route path="hr/attendance" element={<Attendance />} />
+                <Route path="hr/leave" element={<Leave />} />
+                <Route path="hr/payroll" element={<Payroll />} />
+                <Route path="daily-logs" element={<DailyLogs />} />
+                <Route path="monthly-analytics" element={<Analytics />} />
+                <Route path="analytics" element={<Analytics />} />
+                <Route path="papers" element={<Papers />} />
+                <Route path="company-settings" element={<CompanySettings />} />
+                <Route path="settings" element={<CompanySettings />} />
+                <Route path="profile" element={<Profile />} />
+                <Route path="insights" element={<Insights />} />
+                <Route path="contracts" element={<Contracts />} />
+              </Route>
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </GlobalLoaderProvider>
+    </StaffProvider>
   </QueryClientProvider>
 );
 

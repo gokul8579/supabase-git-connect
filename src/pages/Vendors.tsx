@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Plus, Truck } from "lucide-react";
-import { DetailViewDialog, DetailField } from "@/components/DetailViewDialog";
+import { Plus, Truck, Building, Mail, Phone, MapPin, Globe, FileText, Calendar } from "lucide-react";
+import { EnhancedDetailDialog, EnhancedDetailField } from "@/components/EnhancedDetailDialog";
+import { VendorPurchaseHistory } from "@/components/VendorPurchaseHistory";
 import { SearchFilter } from "@/components/SearchFilter";
 import { EduvancaLoader } from "@/components/EduvancaLoader";
 
@@ -176,19 +177,25 @@ const Vendors = () => {
     }
   });
 
-  const detailFields: DetailField[] = selectedVendor ? [
-    { label: "Name", value: selectedVendor.name, type: "text", fieldName: "name" },
-    { label: "Company", value: selectedVendor.company, type: "text", fieldName: "company" },
-    { label: "Email", value: selectedVendor.email, type: "text", fieldName: "email" },
-    { label: "Phone", value: selectedVendor.phone, type: "text", fieldName: "phone" },
-    { label: "Address", value: selectedVendor.address, type: "textarea", fieldName: "address" },
-    { label: "City", value: selectedVendor.city, type: "text", fieldName: "city" },
-    { label: "State", value: selectedVendor.state, type: "text", fieldName: "state" },
-    { label: "Postal Code", value: selectedVendor.postal_code, type: "text", fieldName: "postal_code" },
-    { label: "Country", value: selectedVendor.country, type: "text", fieldName: "country" },
-    { label: "Notes", value: selectedVendor.notes, type: "textarea", fieldName: "notes" },
-    { label: "Created", value: selectedVendor.created_at, type: "date" },
+  const detailFields: EnhancedDetailField[] = selectedVendor ? [
+    { label: "Contact Name", value: selectedVendor.name, type: "text", fieldName: "name", icon: <Truck className="h-4 w-4" />, section: "contact" },
+    { label: "Company", value: selectedVendor.company, type: "text", fieldName: "company", icon: <Building className="h-4 w-4" />, section: "contact" },
+    { label: "Email", value: selectedVendor.email, type: "text", fieldName: "email", icon: <Mail className="h-4 w-4" />, section: "contact" },
+    { label: "Phone", value: selectedVendor.phone, type: "text", fieldName: "phone", icon: <Phone className="h-4 w-4" />, section: "contact" },
+    { label: "Address", value: selectedVendor.address, type: "textarea", fieldName: "address", icon: <MapPin className="h-4 w-4" />, section: "location", fullWidth: true },
+    { label: "City", value: selectedVendor.city, type: "text", fieldName: "city", section: "location" },
+    { label: "State", value: selectedVendor.state, type: "text", fieldName: "state", section: "location" },
+    { label: "Postal Code", value: selectedVendor.postal_code, type: "text", fieldName: "postal_code", section: "location" },
+    { label: "Country", value: selectedVendor.country, type: "text", fieldName: "country", icon: <Globe className="h-4 w-4" />, section: "location" },
+    { label: "Notes", value: selectedVendor.notes, type: "textarea", fieldName: "notes", icon: <FileText className="h-4 w-4" />, section: "other", fullWidth: true },
+    { label: "Created", value: selectedVendor.created_at, type: "date", icon: <Calendar className="h-4 w-4" />, section: "other" },
   ] : [];
+
+  const detailSections = [
+    { id: "contact", label: "Contact Information", icon: <Truck className="h-4 w-4" /> },
+    { id: "location", label: "Location", icon: <MapPin className="h-4 w-4" /> },
+    { id: "other", label: "Additional Info", icon: <FileText className="h-4 w-4" /> },
+  ];
 
   return (
     <div className="space-y-6">
@@ -375,14 +382,26 @@ const Vendors = () => {
         </Table>
       </div>
 
-        <DetailViewDialog
+      {selectedVendor && (
+        <EnhancedDetailDialog
           open={detailOpen}
           onOpenChange={setDetailOpen}
-          title="Vendor Details"
+          title={selectedVendor.name}
+          subtitle={selectedVendor.company || undefined}
+          icon={<Truck className="h-5 w-5" />}
           fields={detailFields}
+          sections={detailSections}
           onEdit={handleDetailEdit}
           onDelete={handleDetailDelete}
+          tabs={[
+            {
+              id: "history",
+              label: "Purchase History",
+              content: <VendorPurchaseHistory vendorId={selectedVendor.id} />,
+            },
+          ]}
         />
+      )}
     </div>
   );
 };

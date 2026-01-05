@@ -1840,6 +1840,42 @@ export type Database = {
           },
         ]
       }
+      staff_accounts: {
+        Row: {
+          admin_user_id: string
+          allowed_modules: string[]
+          created_at: string
+          id: string
+          is_active: boolean
+          staff_email: string
+          staff_name: string
+          staff_user_id: string
+          updated_at: string
+        }
+        Insert: {
+          admin_user_id: string
+          allowed_modules?: string[]
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          staff_email: string
+          staff_name: string
+          staff_user_id: string
+          updated_at?: string
+        }
+        Update: {
+          admin_user_id?: string
+          allowed_modules?: string[]
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          staff_email?: string
+          staff_name?: string
+          staff_user_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       sticky_notes: {
         Row: {
           color: string
@@ -2752,6 +2788,7 @@ export type Database = {
         Args: { product_id: string; qty_to_reduce: number }
         Returns: undefined
       }
+      get_admin_user_id: { Args: { _user_id: string }; Returns: string }
       get_dashboard_revenue: {
         Args: { p_user_id: string }
         Returns: {
@@ -2761,6 +2798,11 @@ export type Database = {
           tax_collected: number
         }[]
       }
+      has_module_access: {
+        Args: { _module: string; _user_id: string }
+        Returns: boolean
+      }
+      is_admin_user: { Args: { _user_id: string }; Returns: boolean }
       upsert_user_session: {
         Args: { p_date: string; p_seconds: number; p_user_id: string }
         Returns: undefined

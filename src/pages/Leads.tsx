@@ -11,8 +11,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
-import { Plus, Phone, Mail, Building, UserPlus, Download, Calendar as CalendarIcon } from "lucide-react";
-import { DetailViewDialog, DetailField } from "@/components/DetailViewDialog";
+import { Plus, Phone, Mail, Building, UserPlus, Download, Calendar as CalendarIcon, Star, User, FileText, Clock } from "lucide-react";
+import { EnhancedDetailDialog, EnhancedDetailField } from "@/components/EnhancedDetailDialog";
 import { SearchFilter } from "@/components/SearchFilter";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { exportToCSV } from "@/lib/csvExport";
@@ -129,44 +129,36 @@ const Leads = () => {
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      new: "bg-blue-100 text-blue-800",
-      contacted: "bg-yellow-100 text-yellow-800",
-      qualified: "bg-green-100 text-green-800",
-      lost: "bg-red-100 text-red-800",
-      converted: "bg-purple-100 text-purple-800",
+      new: "bg-info/10 text-info border-info/20",
+      contacted: "bg-warning/10 text-warning border-warning/20",
+      qualified: "bg-success/10 text-success border-success/20",
+      lost: "bg-destructive/10 text-destructive border-destructive/20",
+      converted: "bg-primary/10 text-primary border-primary/20",
     };
-    return colors[status] || "bg-gray-100 text-gray-800";
+    return colors[status] || "bg-muted text-muted-foreground";
   };
 
-  // 1️⃣ Add this helper function ABOVE handleLeadClick
-const checkIfCustomerExists = async (lead: Lead) => {
-  const { data, error } = await supabase
-    .from("customers")
-    .select("id")
-    .eq("name", lead.name)
-    .eq("phone", lead.phone)
-    .eq("email", lead.email);
+  const checkIfCustomerExists = async (lead: Lead) => {
+    const { data, error } = await supabase
+      .from("customers")
+      .select("id")
+      .eq("name", lead.name)
+      .eq("phone", lead.phone)
+      .eq("email", lead.email);
 
-  if (error) {
-    console.error("Customer check error:", error);
-    return false;
-  }
+    if (error) {
+      console.error("Customer check error:", error);
+      return false;
+    }
 
-  return data && data.length > 0;
-};
+    return data && data.length > 0;
+  };
 
-// 2️⃣ Replace handleLeadClick with this:
-const handleLeadClick = async (lead: Lead) => {
-  const alreadyCustomer = await checkIfCustomerExists(lead);
-
-  setSelectedLead({
-    ...lead,
-    alreadyCustomer, // <-- added flag
-  });
-
-  setDetailOpen(true);
-};
-
+  const handleLeadClick = async (lead: Lead) => {
+    const alreadyCustomer = await checkIfCustomerExists(lead);
+    setSelectedLead({ ...lead, alreadyCustomer });
+    setDetailOpen(true);
+  };
 
   const handleConvertToCustomer = async (leadId: string) => {
     try {
@@ -187,7 +179,6 @@ const handleLeadClick = async (lead: Lead) => {
 
       if (customerError) throw customerError;
 
-      // Update lead status to qualified
       const { error: leadError } = await supabase
         .from("leads")
         .update({ status: "qualified" })
@@ -278,23 +269,17 @@ const handleLeadClick = async (lead: Lead) => {
     toast.success("Leads exported successfully!");
   };
 
-  const leadsByDate = leads.reduce((acc, lead) => {
-    const date = new Date(lead.created_at).toDateString();
-    if (!acc[date]) acc[date] = 0;
-    acc[date]++;
-    return acc;
-  }, {} as Record<string, number>);
-
-  const detailFields: DetailField[] = selectedLead ? [
-    { label: "Name", value: selectedLead.name, type: "text", fieldName: "name" },
-    { label: "Email", value: selectedLead.email, type: "text", fieldName: "email" },
-    { label: "Phone", value: selectedLead.phone, type: "text", fieldName: "phone" },
-    { label: "Company", value: selectedLead.company, type: "text", fieldName: "company" },
+  const detailFields: EnhancedDetailField[] = selectedLead ? [
+    { label: "Name", value: selectedLead.name, type: "text", fieldName: "name", icon: <User className="h-4 w-4" />, section: "contact" },
+    { label: "Email", value: selectedLead.email, type: "text", fieldName: "email", icon: <Mail className="h-4 w-4" />, section: "contact" },
+    { label: "Phone", value: selectedLead.phone, type: "text", fieldName: "phone", icon: <Phone className="h-4 w-4" />, section: "contact" },
+    { label: "Company", value: selectedLead.company, type: "text", fieldName: "company", icon: <Building className="h-4 w-4" />, section: "contact" },
     { 
       label: "Source", 
       value: selectedLead.source, 
       type: "select", 
       fieldName: "source",
+      section: "status",
       selectOptions: [
         { value: "call", label: "Call" },
         { value: "walk_in", label: "Walk-in" },
@@ -309,6 +294,7 @@ const handleLeadClick = async (lead: Lead) => {
       value: selectedLead.status, 
       type: "select", 
       fieldName: "status",
+      section: "status",
       selectOptions: [
         { value: "new", label: "New" },
         { value: "contacted", label: "Contacted" },
@@ -317,11 +303,16 @@ const handleLeadClick = async (lead: Lead) => {
         { value: "converted", label: "Converted" },
       ]
     },
-    { label: "Interest Level (1-5)", value: selectedLead.interest_level, type: "number", fieldName: "interest_level" },
-    { label: "Notes", value: selectedLead.notes, type: "textarea", fieldName: "notes" },
-    //{ label: "Created", value: formatLocalDate(selectedLead.created_at), type: "date" },
-    { label: "Created", value: selectedLead.created_at, type: "date" },
+    { label: "Interest Level", value: selectedLead.interest_level, type: "rating", fieldName: "interest_level", icon: <Star className="h-4 w-4" />, section: "status" },
+    { label: "Notes", value: selectedLead.notes, type: "textarea", fieldName: "notes", icon: <FileText className="h-4 w-4" />, section: "other", fullWidth: true },
+    { label: "Created", value: selectedLead.created_at, type: "date", icon: <Clock className="h-4 w-4" />, section: "other" },
   ] : [];
+
+  const detailSections = [
+    { id: "contact", label: "Contact Information", icon: <User className="h-4 w-4" /> },
+    { id: "status", label: "Lead Status", icon: <Star className="h-4 w-4" /> },
+    { id: "other", label: "Additional Info", icon: <FileText className="h-4 w-4" /> },
+  ];
 
   return (
     <div className="space-y-6">
@@ -483,7 +474,7 @@ const handleLeadClick = async (lead: Lead) => {
           <PopoverTrigger asChild>
             <Button variant="outline">
               <CalendarIcon className="h-4 w-4 mr-2" />
-              {dateFilter ? format(dateFilter, "dd/MM/yyyy") : "Filter by date"}
+              {dateFilter ? format(dateFilter, "PPP") : "Pick a date"}
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start">
@@ -494,36 +485,16 @@ const handleLeadClick = async (lead: Lead) => {
                 setDateFilter(date);
                 setShowCalendar(false);
               }}
-              modifiers={{
-                hasLeads: (date) => {
-                  const dateStr = date.toDateString();
-                  return !!leadsByDate[dateStr];
-                }
-              }}
-              modifiersStyles={{
-                hasLeads: {
-                  fontWeight: 'bold',
-                  backgroundColor: 'hsl(var(--primary) / 0.1)',
-                }
-              }}
+              initialFocus
             />
-            {dateFilter && (
-              <div className="p-3 border-t">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                  onClick={() => {
-                    setDateFilter(undefined);
-                    setShowCalendar(false);
-                  }}
-                >
-                  Clear Filter
-                </Button>
-              </div>
-            )}
           </PopoverContent>
         </Popover>
+
+        {dateFilter && (
+          <Button variant="ghost" onClick={() => setDateFilter(undefined)}>
+            Clear Date
+          </Button>
+        )}
       </div>
 
       <div className="border rounded-lg overflow-x-auto">
@@ -534,8 +505,8 @@ const handleLeadClick = async (lead: Lead) => {
               <TableHead>Contact</TableHead>
               <TableHead>Company</TableHead>
               <TableHead>Source</TableHead>
-              <TableHead>Status</TableHead>
               <TableHead>Interest</TableHead>
+              <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -545,10 +516,14 @@ const handleLeadClick = async (lead: Lead) => {
                   <EduvancaLoader size={32} />
                 </TableCell>
               </TableRow>
-            ) : leads.length === 0 ? (
+            ) : filteredLeads.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
-                  No leads yet. Click "Add Lead" to create your first lead.
+                <TableCell colSpan={6} className="text-center text-muted-foreground py-12">
+                  <div className="flex flex-col items-center gap-2">
+                    <UserPlus className="h-12 w-12 text-muted-foreground/50" />
+                    <p>No leads found</p>
+                    <p className="text-sm">Add your first lead to get started</p>
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (
@@ -583,17 +558,25 @@ const handleLeadClick = async (lead: Lead) => {
                       </div>
                     )}
                   </TableCell>
-                  <TableCell className="capitalize">
-  {(lead.source || "other").replace("_", " ")}
-</TableCell>
-
+                  <TableCell className="capitalize">{lead.source.replace("_", " ")}</TableCell>
                   <TableCell>
-                    <Badge className={getStatusColor(lead.status)} variant="outline">
-                      {lead.status}
-                    </Badge>
+                    <div className="flex items-center gap-0.5">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star
+                          key={star}
+                          className={`h-3 w-3 ${
+                            star <= (lead.interest_level || 0)
+                              ? "fill-warning text-warning"
+                              : "text-muted-foreground/30"
+                          }`}
+                        />
+                      ))}
+                    </div>
                   </TableCell>
                   <TableCell>
-                    {"⭐".repeat(lead.interest_level || 0)}
+                    <Badge variant="outline" className={getStatusColor(lead.status)}>
+                      {lead.status}
+                    </Badge>
                   </TableCell>
                 </TableRow>
               ))
@@ -601,28 +584,36 @@ const handleLeadClick = async (lead: Lead) => {
           </TableBody>
         </Table>
       </div>
-      
-      <DetailViewDialog
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
-        title="Lead Details"
-        fields={detailFields}
-        onEdit={handleDetailEdit}
-        onDelete={handleDetailDelete}
-        actions={
-  selectedLead && !selectedLead.alreadyCustomer ? (
-    <Button onClick={() => handleConvertToCustomer(selectedLead.id)}>
-      <UserPlus className="h-4 w-4 mr-2" />
-      Convert to Customer
-    </Button>
-  ) : (
-    <Badge className="bg-green-100 text-green-700 border border-green-300">
-      Already Converted
-    </Badge>
-  )
-}
 
-      />
+      {selectedLead && (
+        <EnhancedDetailDialog
+          open={detailOpen}
+          onOpenChange={setDetailOpen}
+          title={selectedLead.name}
+          subtitle={selectedLead.company || undefined}
+          icon={<UserPlus className="h-5 w-5" />}
+          headerBadge={{
+            label: selectedLead.status,
+            className: getStatusColor(selectedLead.status),
+          }}
+          fields={detailFields}
+          sections={detailSections}
+          onEdit={handleDetailEdit}
+          onDelete={handleDetailDelete}
+          actions={
+            !selectedLead.alreadyCustomer && selectedLead.status !== "converted" ? (
+              <Button onClick={() => handleConvertToCustomer(selectedLead.id)}>
+                <UserPlus className="h-4 w-4 mr-2" />
+                Convert to Customer
+              </Button>
+            ) : selectedLead.alreadyCustomer ? (
+              <Badge className="bg-success/10 text-success border-success/20">
+                Already a Customer
+              </Badge>
+            ) : null
+          }
+        />
+      )}
 
       <ConfirmDialog
         open={deleteDialogOpen}
@@ -630,6 +621,8 @@ const handleLeadClick = async (lead: Lead) => {
         onConfirm={confirmDelete}
         title="Delete Lead"
         description="Are you sure you want to delete this lead? This action cannot be undone."
+        variant="destructive"
+        confirmText="Delete"
       />
     </div>
   );
