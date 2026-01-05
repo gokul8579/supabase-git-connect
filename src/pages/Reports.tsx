@@ -1761,8 +1761,8 @@ const avgPOValue =
         return acc;
       }, {})
     )
-      .map(([name, qty]) => ({ name, qty }))
-      .sort((a, b) => b.qty - a.qty)
+      .map(([name, qty]) => ({ name, qty: qty as number }))
+      .sort((a, b) => (b.qty as number) - (a.qty as number))
       .slice(0, 5);
 
     // -------------------------
@@ -2700,9 +2700,9 @@ const productivityColor =
                             <PieChart>
                               <Pie
                                 data={[
-  { name: "Draft", value: poInsights.statusSummary.draft },
+  { name: "Draft", value: (poInsights.statusSummary as any).draft || 0 },
   { name: "Pending", value: poInsights.statusSummary.pending },
-  { name: "Approved", value: poInsights.statusSummary.approved },
+  { name: "Approved", value: (poInsights.statusSummary as any).approved || 0 },
   { name: "Received", value: poInsights.statusSummary.received },
   { name: "Cancelled", value: poInsights.statusSummary.cancelled },
 ]}

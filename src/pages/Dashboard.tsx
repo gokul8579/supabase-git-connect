@@ -61,7 +61,7 @@ const Dashboard = () => {
   const [analyticsData, setAnalyticsData] = useState({
     leadsBySource: [] as { name: string; value: number }[],
     dealsByStage: [] as { name: string; value: number }[],
-    monthlyRevenue: [] as { month: string; revenue: number; deals: number }[],
+    monthlyRevenue: [] as { monthKey: string; month: string; revenue: number; deals: number }[],
     conversionRate: 0,
     avgDealValue: 0,
     activeCustomers: 0,
@@ -624,6 +624,7 @@ if (monthlyRevenueMap[key]) {
 
 // ------------ FORMAT FOR CHART ------------
 const monthlyRevenue = last6Months.map(({ key, label }) => ({
+  monthKey: key,
   month: label,
   revenue:
     (monthlyRevenueMap[key]?.dealRevenue || 0) +

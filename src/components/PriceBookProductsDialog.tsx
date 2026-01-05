@@ -10,7 +10,7 @@ type PBProduct = {
   id: string;
   name: string;
   unit_price: number;
-  quantity_in_stock: number;
+  stock_quantity: number;
 };
 
 export const PriceBookProductsDialog = ({
@@ -20,7 +20,7 @@ export const PriceBookProductsDialog = ({
   priceBookName,
 }) => {
   const [loading, setLoading] = useState(true);
-  const [products, setProducts] = useState([]);
+  const [products, setProducts] = useState<PBProduct[]>([]);
 
   useEffect(() => {
     if (priceBookId && open) {
@@ -50,7 +50,7 @@ const user = authRes.data.user;
       if (error) throw error;
 
       setProducts(
-        (data || []).map((p) => ({
+        ((data as any[]) || []).map((p: any) => ({
           id: p.id,
           name: p.name,
           stock_quantity: p.quantity_in_stock || 0,
