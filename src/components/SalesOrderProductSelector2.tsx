@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { IndianNumberInput } from "@/components/ui/indian-number-input";
 import { Button } from "@/components/ui/button";
 import { Trash2, Plus } from "lucide-react";
+import { toast } from "./ui/sonner";
+
 
 interface Product {
   id: string;
@@ -23,6 +25,7 @@ interface LineItem {
   cost_price?: number;
   cgst_percent: number;
   sgst_percent: number;
+  available_stock?: number;
 }
 
 interface Props {
@@ -38,7 +41,74 @@ type BillingType = "inclusive_gst" | "exclusive_gst" | "no_gst";
  * else taxableValue = amount (exclusive)
  * totalTax = amount - taxableValue (inclusive) or taxableValue * gstRate / 100 (exclusive)
  * split tax into CGST/SGST equally
+ * 
  */
+
+const fetchAvailableStock = async (productId: string) => {
+  const { data: product } = await supabase
+    .from("products")
+    .select("quantity_in_stock")
+    .eq("id", productId)
+    .single();
+
+  const actualStock = Number(product?.quantity_in_stock || 0);
+
+  const { data: reservedDealsRaw } = await supabase
+  .from("deal_items")
+  .select("id, quantity, deal_id")
+  .eq("product_id", productId);
+
+// Fetch stages separately (TS SAFE)
+let reservedPipeline = 0;
+
+if (reservedDealsRaw?.length) {
+  const dealIds = reservedDealsRaw.map((d) => d.deal_id);
+
+  const { data: dealsData } = await supabase
+    .from("deals")
+    .select("id, stage")
+    .in("id", dealIds);
+
+  reservedPipeline = reservedDealsRaw.reduce((sum, d) => {
+    const deal = dealsData?.find((x) => x.id === d.deal_id);
+    if (!deal) return sum;
+    if (deal.stage === "closed_won" || deal.stage === "closed_lost") return sum;
+    return sum + (d.quantity || 0);
+  }, 0);
+}
+
+
+  // STEP 1: Get the raw rows from sales_order_items
+const { data: reservedSORaw } = await supabase
+  .from("sales_order_items")
+  .select("id, quantity, sales_order_id")
+  .eq("product_id", productId);
+
+// Default reserved qty
+let reservedSOQty = 0;
+
+// STEP 2: Fetch related sales orders separately (TS SAFE)
+if (reservedSORaw?.length) {
+  const soIds = reservedSORaw.map((s) => s.sales_order_id);
+
+  const { data: soData } = await supabase
+    .from("sales_orders")
+    .select("id, status")
+    .in("id", soIds);
+
+  reservedSOQty = reservedSORaw.reduce((sum, s) => {
+    const so = soData?.find((x) => x.id === s.sales_order_id);
+    if (!so) return sum;
+    if (so.status !== "draft") return sum;
+    return sum + (s.quantity || 0);
+  }, 0);
+}
+
+return actualStock - reservedPipeline - reservedSOQty;
+
+};
+
+
 function calculateLineItemAmounts(unitPrice: number, quantity: number, gstRate: number, billingType: BillingType) {
   const amount = unitPrice * quantity;
   if (gstRate === 0 || billingType === "no_gst") {
@@ -133,22 +203,37 @@ export const SalesOrderProductSelector2 = ({ items, onChange }: Props) => {
 
     // If switching to existing and product selected, auto-fill
     if (field === "product_id" && newItems[index].type === "existing" && value) {
-      const product = products.find(p => p.id === value);
-      if (product) {
-  newItems[index].description = product.name;
-  newItems[index].unit_price = Number(product.unit_price) || 0;
-  newItems[index].cost_price = Number((product as any).cost_price) || 0;   // ADD THIS
+  const product = products.find(p => p.id === value);
 
-  // Auto-set GST if present
-  if (typeof (product as any).gst_rate === "number") {
-    const totalRate = Number((product as any).gst_rate) || 0;
-    const half = parseFloat((totalRate / 2).toFixed(2));
-    newItems[index].cgst_percent = half;
-    newItems[index].sgst_percent = totalRate - half;
+  if (product) {
+    newItems[index].description = product.name;
+    newItems[index].unit_price = Number(product.unit_price) || 0;
+    newItems[index].cost_price = Number((product as any).cost_price) || 0;
+
+    // Auto-set GST
+    if (typeof (product as any).gst_rate === "number") {
+      const totalRate = Number((product as any).gst_rate) || 0;
+      const half = parseFloat((totalRate / 2).toFixed(2));
+      newItems[index].cgst_percent = half;
+      newItems[index].sgst_percent = totalRate - half;
+    }
+
+    // *** FETCH STOCK ***
+    fetchAvailableStock(value).then((available) => {
+      newItems[index].available_stock = available;
+
+      if (newItems[index].quantity > available) {
+        toast.error(`Only ${available} units available`);
+        newItems[index].quantity = available;
+      }
+
+      onChange([...newItems]); // update parent
+    });
+
+    return; // stop here to avoid extra onChange below
   }
 }
 
-    }
 
     // If user manually edits cgst/sgst we keep it as-is.
     // Keep quantity and price as numbers
@@ -183,7 +268,16 @@ export const SalesOrderProductSelector2 = ({ items, onChange }: Props) => {
       {items.map((item, index) => {
         // compute display amounts using current state
         const totalGstRate = (Number(item.cgst_percent || 0) + Number(item.sgst_percent || 0));
-        const computed = calculateLineItemAmounts(item.unit_price, item.quantity, totalGstRate, billingType);
+        const computed =
+  item.type === "service"
+    ? {
+        taxableValue: item.unit_price,
+        totalAmount: item.unit_price,
+        cgstAmount: 0,
+        sgstAmount: 0,
+      }
+    : calculateLineItemAmounts(item.unit_price, item.quantity, totalGstRate, billingType);
+
 
         return (
           <div key={index} className="p-4 border rounded-lg space-y-3 bg-muted/30">
@@ -308,20 +402,52 @@ export const SalesOrderProductSelector2 = ({ items, onChange }: Props) => {
               )}
 
               {item.type === "existing" && (
-                <div className="space-y-2 md:col-span-2">
-                  <Label className="text-xs">Product Description</Label>
-                  <Input className="h-9" value={item.description} disabled readOnly />
-                </div>
-              )}
+  <div className="space-y-2 md:col-span-2">
+    <Label className="text-xs flex items-center gap-2">
+      Product Description
 
-              <div className="space-y-2">
-                <Label className="text-xs">Quantity *</Label>
-                <IndianNumberInput
-                  className="h-9"
-                  value={item.quantity}
-                  onNumericChange={(v) => updateLineItem(index, "quantity", v || 1)}
-                />
-              </div>
+      {item.available_stock !== undefined && (
+        <span
+          className={
+            "px-2 py-0.5 text-xs rounded " +
+            (item.available_stock > 10
+              ? "bg-green-100 text-green-700"
+              : item.available_stock > 0
+              ? "bg-yellow-100 text-yellow-700"
+              : "bg-red-100 text-red-700")
+          }
+        >
+          Stock: {item.available_stock}
+        </span>
+      )}
+    </Label>
+
+    <Input className="h-9" value={item.description} disabled readOnly />
+  </div>
+)}
+
+
+              {item.type === "existing" && (
+  <div className="space-y-2">
+    <Label className="text-xs">Quantity *</Label>
+    <IndianNumberInput
+      className="h-9"
+      value={item.quantity}
+      onNumericChange={(v) => {
+        const newQty = v || 1;
+
+        if (item.available_stock !== undefined && newQty > item.available_stock) {
+          toast.error(`Cannot exceed stock (${item.available_stock})`);
+          updateLineItem(index, "quantity", item.available_stock);
+          return;
+        }
+
+        updateLineItem(index, "quantity", newQty);
+      }}
+    />
+  </div>
+)}
+
 
               <div className="space-y-2">
                 <Label className="text-xs">Unit Price (₹) *</Label>
@@ -338,42 +464,42 @@ export const SalesOrderProductSelector2 = ({ items, onChange }: Props) => {
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {showGstSplit ? (
-                <>
-                  <div className="space-y-2">
-                    <Label className="text-xs">CGST (%)</Label>
-                    <Input
-                      className="h-9"
-                      type="number"
-                      step="0.01"
-                      value={item.cgst_percent}
-                      onChange={(e) => updateLineItem(index, "cgst_percent", parseFloat(e.target.value) || 0)}
-                    />
-                  </div>
+              {item.type === "existing" && showGstSplit && (
+  <>
+    <div className="space-y-2">
+      <Label className="text-xs">CGST (%)</Label>
+      <Input
+        className="h-9"
+        type="number"
+        step="0.01"
+        value={item.cgst_percent}
+        onChange={(e) =>
+          updateLineItem(index, "cgst_percent", parseFloat(e.target.value) || 0)
+        }
+      />
+    </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-xs">SGST (%)</Label>
-                    <Input
-                      className="h-9"
-                      type="number"
-                      step="0.01"
-                      value={item.sgst_percent}
-                      onChange={(e) => updateLineItem(index, "sgst_percent", parseFloat(e.target.value) || 0)}
-                    />
-                  </div>
-                </>
-              ) : (
-                <div className="space-y-2 md:col-span-2">
-                  <Label className="text-xs">GST Rate (%)</Label>
-                  <Input
-                    className="h-9"
-                    type="text"
-                    value={`${(Number(item.cgst_percent || 0) + Number(item.sgst_percent || 0)).toFixed(2)}%`}
-                    disabled
-                  />
-                  <p className="text-xs text-muted-foreground">Tax columns are hidden (calculated internally)</p>
-                </div>
-              )}
+    <div className="space-y-2">
+      <Label className="text-xs">SGST (%)</Label>
+      <Input
+        className="h-9"
+        type="number"
+        step="0.01"
+        value={item.sgst_percent}
+        onChange={(e) =>
+          updateLineItem(index, "sgst_percent", parseFloat(e.target.value) || 0)
+        }
+      />
+    </div>
+  </>
+)}
+
+{item.type === "service" && (
+  <div className="col-span-2 text-sm text-muted-foreground">
+    No GST for service items
+  </div>
+)}
+
 
               <div className="space-y-2">
                 <Label className="text-xs">Subtotal</Label>

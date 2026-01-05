@@ -15,6 +15,7 @@ import { IndianNumberInput } from "@/components/ui/indian-number-input";
 import { formatIndianCurrency } from "@/lib/formatUtils";
 import { SearchFilter } from "@/components/SearchFilter";
 import { PayrollAnalytics } from "@/components/PayrollAnalytics";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 interface PayrollRecord {
   id: string;
@@ -46,6 +47,12 @@ const Payroll = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterField, setFilterField] = useState("employee_id");
   const [summary, setSummary] = useState<any>(null);
+  const [payrollLoading, setPayrollLoading] = useState(false);
+  const [holidayDates, setHolidayDates] = useState<string[]>([]);
+const [holidayType, setHolidayType] = useState<"holiday" | "special">("holiday");
+const [holidayTitle, setHolidayTitle] = useState("");
+const [filterMonth, setFilterMonth] = useState<number | "all">("all");
+const [filterYear, setFilterYear] = useState<number | "all">("all");
   const [formData, setFormData] = useState({
     employee_id: "",
     month: new Date().getMonth() + 1,
@@ -64,20 +71,32 @@ const Payroll = () => {
   }, []);
 
   useEffect(() => {
-    if (searchTerm) {
-      const filtered = payroll.filter((record) => {
-        const value = filterField === "employee_id"
+  let data = [...payroll];
+
+  if (filterMonth !== "all") {
+    data = data.filter(p => p.month === filterMonth);
+  }
+
+  if (filterYear !== "all") {
+    data = data.filter(p => p.year === filterYear);
+  }
+
+  if (searchTerm) {
+    data = data.filter((record) => {
+      const value =
+        filterField === "employee_id"
           ? getEmployeeName(record.employee_id).toLowerCase()
           : filterField === "status"
           ? record.status.toLowerCase()
           : String(record[filterField as keyof PayrollRecord] || "").toLowerCase();
-        return value.includes(searchTerm.toLowerCase());
-      });
-      setFilteredPayroll(filtered);
-    } else {
-      setFilteredPayroll(payroll);
-    }
-  }, [searchTerm, filterField, payroll]);
+
+      return value.includes(searchTerm.toLowerCase());
+    });
+  }
+
+  setFilteredPayroll(data);
+}, [searchTerm, filterField, payroll, filterMonth, filterYear]);
+
 
   const fetchPayroll = async () => {
     try {
@@ -143,50 +162,56 @@ const Payroll = () => {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+  e.preventDefault();
+  if (payrollLoading) return;
+  setPayrollLoading(true);
 
-      const calculatedSalary = calculateSalary();
-      const allowances = parseFloat(formData.allowances) || 0;
-      const deductions = parseFloat(formData.deductions) || 0;
-      const netSalary = calculatedSalary + allowances - deductions;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
 
-      const { error } = await supabase.from("payroll").insert([{
-        employee_id: formData.employee_id,
-        month: formData.month,
-        year: formData.year,
-        basic_salary: calculatedSalary,
-        allowances,
-        deductions,
-        net_salary: netSalary,
-        payment_date: formData.payment_date || null,
-        notes: formData.notes || null,
-        status: "pending",
-        user_id: user.id,
-      }] as any);
+    const calculatedSalary = calculateSalary();
+    const allowances = parseFloat(formData.allowances) || 0;
+    const deductions = parseFloat(formData.deductions) || 0;
+    const netSalary = calculatedSalary + allowances - deductions;
 
-      if (error) throw error;
+    const { error } = await supabase.from("payroll").insert([{
+      employee_id: formData.employee_id,
+      month: formData.month,
+      year: formData.year,
+      basic_salary: calculatedSalary,
+      allowances,
+      deductions,
+      net_salary: netSalary,
+      payment_date: formData.payment_date || null,
+      notes: formData.notes || null,
+      status: "pending",
+      user_id: user.id,
+    }] as any);
 
-      toast.success("Payroll processed successfully!");
-      setOpen(false);
-      setFormData({
-        employee_id: "",
-        month: new Date().getMonth() + 1,
-        year: new Date().getFullYear(),
-        basic_salary: "",
-        allowances: "",
-        deductions: "",
-        payment_date: "",
-        notes: "",
-        payment_frequency: "monthly",
-      });
-      fetchPayroll();
-    } catch (error: any) {
-      toast.error("Error creating payroll");
-    }
-  };
+    if (error) throw error;
+
+    toast.success("Payroll processed successfully!");
+    setOpen(false);
+    setFormData({
+      employee_id: "",
+      month: new Date().getMonth() + 1,
+      year: new Date().getFullYear(),
+      basic_salary: "",
+      allowances: "",
+      deductions: "",
+      payment_date: "",
+      notes: "",
+      payment_frequency: "monthly",
+    });
+    await fetchPayroll();
+  } catch (error: any) {
+    toast.error("Error creating payroll");
+  } finally {
+    setPayrollLoading(false);
+  }
+};
+
 
   const getStatusColor = (status: string) => {
     return status === "paid" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800";
@@ -196,6 +221,16 @@ const Payroll = () => {
     const emp = employees.find(e => e.id === empId);
     return emp ? `${emp.first_name} ${emp.last_name}` : "-";
   };
+
+  const isPayrollProcessed = (employeeId: string, month: number, year: number) => {
+  return payroll.some(
+    p =>
+      p.employee_id === employeeId &&
+      p.month === month &&
+      p.year === year
+  );
+};
+
 
 const fetchSummary = async (employee_id: string, monthArg?: number, yearArg?: number) => {
   const { data: { user } } = await supabase.auth.getUser();
@@ -262,13 +297,50 @@ const absent = att.filter(a => a.status === "absent").length;
           <h1 className="text-3xl font-bold">Payroll</h1>
           <p className="text-muted-foreground">Manage employee salaries and payments</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Process Payroll
-            </Button>
-          </DialogTrigger>
+        
+        <div className="flex gap-3 items-center">
+  {/* Month Filter */}
+  <Select
+    value={filterMonth === "all" ? "all" : filterMonth.toString()}
+    onValueChange={(v) =>
+      setFilterMonth(v === "all" ? "all" : parseInt(v))
+    }
+  >
+    <SelectTrigger className="w-[140px]">
+      <SelectValue placeholder="Month" />
+    </SelectTrigger>
+    <SelectContent>
+      <SelectItem value="all">All Months</SelectItem>
+      {[...Array(12)].map((_, i) => (
+        <SelectItem key={i + 1} value={(i + 1).toString()}>
+          {new Date(2000, i).toLocaleString("default", { month: "long" })}
+        </SelectItem>
+      ))}
+    </SelectContent>
+  </Select>
+
+  {/* Year Filter */}
+  <Input
+    type="number"
+    className="w-[120px]"
+    placeholder="Year"
+    value={filterYear === "all" ? "" : filterYear}
+    onChange={(e) =>
+      setFilterYear(e.target.value ? parseInt(e.target.value) : "all")
+    }
+  />
+
+  {/* Process Payroll Button */}
+  <Dialog open={open} onOpenChange={setOpen}>
+    <DialogTrigger asChild>
+      <Button>
+        <Plus className="h-4 w-4 mr-2" />
+        Process Payroll
+      </Button>
+    </DialogTrigger>
+    
+  
+
           <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Process Payroll</DialogTitle>
@@ -281,12 +353,26 @@ const absent = att.filter(a => a.status === "absent").length;
                     <SelectValue placeholder="Select employee" />
                   </SelectTrigger>
                   <SelectContent>
-                    {employees.map((emp) => (
-                      <SelectItem key={emp.id} value={emp.id}>
-                        {`${emp.first_name} ${emp.last_name}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
+  {employees
+    .filter(
+      emp =>
+        !isPayrollProcessed(emp.id, formData.month, formData.year)
+    )
+    .map((emp) => (
+      <SelectItem key={emp.id} value={emp.id}>
+        {`${emp.first_name} ${emp.last_name}`}
+      </SelectItem>
+    ))}
+
+  {employees.filter(
+    emp => !isPayrollProcessed(emp.id, formData.month, formData.year)
+  ).length === 0 && (
+    <div className="px-3 py-2 text-sm text-muted-foreground">
+      Payroll already processed for all employees
+    </div>
+  )}
+</SelectContent>
+
                 </Select>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -297,15 +383,19 @@ const absent = att.filter(a => a.status === "absent").length;
   onValueChange={async (v) => {
     const newMonth = parseInt(v);
 
-    // Update formData first
-    setFormData(prev => ({ ...prev, month: newMonth }));
+    // ⬅️ RESET employee when month changes
+    setFormData(prev => ({
+      ...prev,
+      month: newMonth,
+      employee_id: "",
+      basic_salary: "",
+    }));
 
-    // Now refresh summary correctly
-    if (formData.employee_id) {
-      await fetchSummary(formData.employee_id, newMonth, formData.year);
-    }
+    // Clear summary
+    setSummary(null);
   }}
 >
+
   <SelectTrigger>
     <SelectValue />
   </SelectTrigger>
@@ -325,17 +415,23 @@ const absent = att.filter(a => a.status === "absent").length;
   id="year"
   type="number"
   value={formData.year}
-  onChange={async (e) => {
+  onChange={(e) => {
     const newYear = parseInt(e.target.value);
 
-    setFormData(prev => ({ ...prev, year: newYear }));
+    // ⬅️ RESET employee when year changes
+    setFormData(prev => ({
+      ...prev,
+      year: newYear,
+      employee_id: "",
+      basic_salary: "",
+    }));
 
-    if (formData.employee_id) {
-      await fetchSummary(formData.employee_id, formData.month, newYear);
-    }
+    // Clear summary
+    setSummary(null);
   }}
   required
 />
+
 
 
                 </div>
@@ -347,8 +443,7 @@ const absent = att.filter(a => a.status === "absent").length;
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="daily">Daily (Salary / 30)</SelectItem>
-                    <SelectItem value="weekly">Weekly (Salary / 4)</SelectItem>
+                    
                     <SelectItem value="monthly">Monthly (Full Salary)</SelectItem>
                   </SelectContent>
                 </Select>
@@ -373,6 +468,7 @@ const absent = att.filter(a => a.status === "absent").length;
 
               {summary && (
   <div className="p-4 border rounded-xl bg-white shadow-sm space-y-4 max-h-[260px] overflow-y-auto">
+    
 
     <h4 className="text-base font-semibold">Monthly Summary</h4>
 
@@ -424,33 +520,50 @@ const absent = att.filter(a => a.status === "absent").length;
     <hr className="my-2" />
 
     {/* Salary suggestion */}
-    {formData.basic_salary && (() => {
-      const basic = Number(formData.basic_salary);
-      const perDay = basic / summary.working_days;
-      const fullPay = summary.present * perDay;
-      const halfPay = summary.halfday * perDay * 0.5;
-      const absentCut = summary.absent * perDay;
-      const suggested = fullPay + halfPay - absentCut;
+    {/* Salary Suggestion */}
+{formData.basic_salary && (() => {
+  const basic = Number(formData.basic_salary);
+  const perDay = basic / summary.working_days;
 
-      return (
-        <div className="space-y-2">
-          <h4 className="text-base font-semibold">Salary Suggestion</h4>
+  const presentEarn = summary.present * perDay;
+  const halfEarn = summary.halfday * (perDay / 2);
 
-          <div className="text-sm space-y-1">
-            <p>Per Day Salary: ₹{perDay.toFixed(2)}</p>
-            <p>Full-Day Earnings: ₹{fullPay.toFixed(2)}</p>
-            <p>Half-Day Earnings: ₹{halfPay.toFixed(2)}</p>
-            <p>Absent Deduction: −₹{absentCut.toFixed(2)}</p>
-          </div>
+  // Final Salary (earned only, NO deduction)
+  const finalSalary = presentEarn + halfEarn;
 
-          <div className="p-3 bg-green-100 border border-green-300 rounded-lg text-center">
-            <p className="text-lg font-bold text-green-800">
-              Suggested Net Salary: ₹{suggested.toFixed(2)}
-            </p>
-          </div>
-        </div>
-      );
-    })()}
+  // Reference only
+  const recommendedAbsentDeduction = summary.absent * perDay;
+  const recommendedHalfDeduction = summary.halfday * (perDay / 2);
+
+  return (
+    <div className="space-y-2">
+      <h4 className="text-base font-semibold">Salary Suggestion</h4>
+
+      <div className="text-sm space-y-1">
+        <p>Per Day Salary: ₹{perDay.toFixed(2)}</p>
+        <p>Present Earnings: ₹{presentEarn.toFixed(2)}</p>
+        <p>Half-Day Earnings: ₹{halfEarn.toFixed(2)}</p>
+
+        <p className="text-gray-600 mt-2 font-semibold">
+          Recommended Deductions (for reference only):
+        </p>
+        <p className="text-xs">Absent Days ({summary.absent}) × ₹{perDay.toFixed(2)}: 
+          <strong> ₹{recommendedAbsentDeduction.toFixed(2)}</strong>
+        </p>
+        <p className="text-xs">Half-Day ({summary.halfday}) × ₹{(perDay/2).toFixed(2)}:
+          <strong> ₹{recommendedHalfDeduction.toFixed(2)}</strong>
+        </p>
+      </div>
+
+      <div className="p-3 bg-green-100 border border-green-300 rounded-lg text-center">
+        <p className="text-lg font-bold text-green-800">
+          Suggested Net Salary: ₹{finalSalary.toFixed(2)}
+        </p>
+      </div>
+    </div>
+  );
+})()}
+
   </div>
 )}
 
@@ -503,11 +616,19 @@ const absent = att.filter(a => a.status === "absent").length;
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit">Process Payroll</Button>
+                <Button
+  type="submit"
+  disabled={payrollLoading}
+  className={payrollLoading ? "opacity-50 cursor-not-allowed" : ""}
+>
+  {payrollLoading ? "Processing..." : "Process Payroll"}
+</Button>
+
               </div>
             </form>
           </DialogContent>
         </Dialog>
+      </div>
       </div>
 
       <Tabs defaultValue="records" className="space-y-4">
@@ -544,7 +665,7 @@ const absent = att.filter(a => a.status === "absent").length;
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center">Loading...</TableCell>
+                <TableCell colSpan={6} className="text-center"><EduvancaLoader size={32} /></TableCell>
               </TableRow>
             ) : filteredPayroll.length === 0 ? (
               <TableRow>
@@ -570,31 +691,41 @@ const absent = att.filter(a => a.status === "absent").length;
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Select
-                      value={record.status}
-                      onValueChange={async (value) => {
-                        try {
-                          const { error } = await supabase
-                            .from("payroll")
-                            .update({ status: value as any })
-                            .eq("id", record.id);
-                          
-                          if (error) throw error;
-                          toast.success("Status updated!");
-                          fetchPayroll();
-                        } catch (error: any) {
-                          toast.error("Error updating status");
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="w-24">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pending">Pending</SelectItem>
-                        <SelectItem value="paid">Paid</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    {record.status === "paid" ? (
+  // Once paid → lock the dropdown completely
+  <Badge className="bg-green-100 text-green-700 border-green-300">
+    Paid
+  </Badge>
+) : (
+  <Select
+    value={record.status}
+    onValueChange={async (value) => {
+      try {
+        const { error } = await supabase
+          .from("payroll")
+          .update({ status: value })
+          .eq("id", record.id);
+
+        if (error) throw error;
+
+        toast.success("Status updated!");
+        fetchPayroll();
+      } catch (error: any) {
+        toast.error("Error updating status");
+      }
+    }}
+  >
+    <SelectTrigger className="w-24">
+      <SelectValue />
+    </SelectTrigger>
+    <SelectContent>
+      {/* User can only move from pending → paid */}
+      <SelectItem value="pending">Pending</SelectItem>
+      <SelectItem value="paid">Paid</SelectItem>
+    </SelectContent>
+  </Select>
+)}
+
                   </TableCell>
                 </TableRow>
               ))

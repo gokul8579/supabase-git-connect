@@ -12,6 +12,7 @@ import { Plus, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { DetailViewDialog, DetailField } from "@/components/DetailViewDialog";
 import { SearchFilter } from "@/components/SearchFilter";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 interface Product {
   id: string;
@@ -431,7 +432,7 @@ const Products = () => {
             {loading ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center">
-                  Loading...
+                  <EduvancaLoader size={32} />
                 </TableCell>
               </TableRow>
             ) : filteredProducts.length === 0 ? (

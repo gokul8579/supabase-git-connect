@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { Plus, BookOpen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PriceBookProductsDialog } from "@/components/PriceBookProductsDialog";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 interface PriceBook {
   id: string;
@@ -154,7 +155,7 @@ const PriceBooks = () => {
             {loading ? (
               <TableRow>
                 <TableCell colSpan={4} className="text-center">
-                  Loading...
+                  <EduvancaLoader size={32} />
                 </TableCell>
               </TableRow>
             ) : priceBooks.length === 0 ? (

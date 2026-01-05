@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 const CompanySettings = () => {
   const [loading, setLoading] = useState(true);
@@ -132,6 +133,8 @@ show_gst_split: (data as any).show_gst_split !== false,
             show_cin_number: formData.show_cin_number,
             billing_type: formData.billing_type,
 show_gst_split: formData.show_gst_split,
+onboarding_completed: true,
+onboarding_completed_at: new Date().toISOString(),
 
 
           })
@@ -161,6 +164,8 @@ show_gst_split: formData.show_gst_split,
             show_cin_number: formData.show_cin_number,
             billing_type: formData.billing_type,
 show_gst_split: formData.show_gst_split,
+onboarding_completed: true,
+onboarding_completed_at: new Date().toISOString(),
 
 
             user_id: user.id,
@@ -179,7 +184,7 @@ show_gst_split: formData.show_gst_split,
   };
 
   if (loading) {
-    return <div className="text-center py-12">Loading...</div>;
+    return <div className="text-center py-12"><EduvancaLoader size={32} /></div>;
   }
 
   return (
@@ -300,24 +305,7 @@ show_gst_split: formData.show_gst_split,
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="quotation_template">Quotation Template</Label>
-              <Select 
-                value={formData.quotation_template} 
-                onValueChange={(value) => setFormData({ ...formData, quotation_template: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="t1">Classic Professional</SelectItem>
-                  <SelectItem value="t2">Modern Minimalist</SelectItem>
-                  <SelectItem value="t3">Bold Corporate</SelectItem>
-                  <SelectItem value="t4">Elegant Premium</SelectItem>
-                  <SelectItem value="t5">Creative Vibrant</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            
 
             <div className="space-y-2">
               <Label htmlFor="company_type">Company Type</Label>
@@ -382,17 +370,7 @@ show_gst_split: formData.show_gst_split,
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between space-x-2">
-              <div className="space-y-0.5">
-                <Label htmlFor="show_tax_id">Show Tax ID / GST Number</Label>
-                <p className="text-sm text-muted-foreground">Display tax identification number on documents</p>
-              </div>
-              <Switch
-                id="show_tax_id"
-                checked={formData.show_tax_id}
-                onCheckedChange={(checked) => setFormData({ ...formData, show_tax_id: checked })}
-              />
-            </div>
+            
 
             <div className="space-y-2">
   <Label>Billing Type</Label>
@@ -414,17 +392,7 @@ show_gst_split: formData.show_gst_split,
 </div>
 
 
-            <div className="flex items-center justify-between space-x-2">
-              <div className="space-y-0.5">
-                <Label htmlFor="show_cin_number">Show CIN Number</Label>
-                <p className="text-sm text-muted-foreground">Display Corporate Identification Number on documents</p>
-              </div>
-              <Switch
-                id="show_cin_number"
-                checked={formData.show_cin_number}
-                onCheckedChange={(checked) => setFormData({ ...formData, show_cin_number: checked })}
-              />
-            </div>
+            
 
             <div className="flex items-center justify-between space-x-2">
   <div className="space-y-0.5">

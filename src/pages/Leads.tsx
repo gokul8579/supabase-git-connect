@@ -19,6 +19,7 @@ import { exportToCSV } from "@/lib/csvExport";
 import { formatLocalDate } from "@/lib/dateUtils";
 import { format } from "date-fns";
 import ImportContactsDialog from "@/components/ImportContactsDialog";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 interface Lead {
   id: string;
@@ -324,12 +325,12 @@ const handleLeadClick = async (lead: Lead) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold">Leads</h1>
           <p className="text-muted-foreground">Manage and track your sales leads</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={handleExportCSV} disabled={filteredLeads.length === 0}>
             <Download className="h-4 w-4 mr-2" />
             Export CSV
@@ -541,7 +542,7 @@ const handleLeadClick = async (lead: Lead) => {
             {loading ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center">
-                  Loading...
+                  <EduvancaLoader size={32} />
                 </TableCell>
               </TableRow>
             ) : leads.length === 0 ? (

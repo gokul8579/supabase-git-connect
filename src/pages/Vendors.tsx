@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { Plus, Truck } from "lucide-react";
 import { DetailViewDialog, DetailField } from "@/components/DetailViewDialog";
 import { SearchFilter } from "@/components/SearchFilter";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 interface Vendor {
   id: string;
@@ -338,7 +339,7 @@ const Vendors = () => {
             {loading ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center">
-                  Loading...
+                  <EduvancaLoader size={32} />
                 </TableCell>
               </TableRow>
             ) : filteredVendors.length === 0 ? (

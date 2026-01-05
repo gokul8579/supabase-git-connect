@@ -17,6 +17,7 @@ import { SearchFilter } from "@/components/SearchFilter";
 import { AdvancedFilters } from "@/components/AdvancedFilters";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ProductSelector } from "@/components/ProductSelector";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 
 interface PurchaseOrder {
@@ -26,6 +27,7 @@ interface PurchaseOrder {
   order_date: string;
   expected_delivery_date: string | null;
   status: string;
+  payment_status: "pending" | "paid";
   total_amount: number;
   tax_amount: number;
   discount_amount: number;
@@ -62,6 +64,7 @@ const PurchaseOrders = () => {
     order_date: new Date().toISOString().split('T')[0],
     expected_delivery_date: "",
     status: "draft",
+    payment_status: "pending",
     tax_percent: "18",
     discount_amount: "0",
     notes: "",
@@ -90,7 +93,15 @@ const PurchaseOrders = () => {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setPurchaseOrders(data || []);
+      //setPurchaseOrders(data || []);
+      const normalized: PurchaseOrder[] = (data || []).map((po: any) => ({
+  ...po,
+  payment_status:
+    po.payment_status === "paid" ? "paid" : "pending",
+}));
+
+setPurchaseOrders(normalized);
+
     } catch (error: any) {
       toast.error("Failed to fetch purchase orders. Please try again.");
       console.error(error);
@@ -203,6 +214,7 @@ const PurchaseOrders = () => {
           order_date: formData.order_date,
           expected_delivery_date: formData.expected_delivery_date || null,
           status: formData.status,
+          payment_status: formData.payment_status,
           subtotal,
           tax_amount: totalTax,
           discount_amount: discount,
@@ -259,15 +271,17 @@ if (itemsError) {
 
   const resetForm = () => {
     setFormData({
-      po_number: `PO-${Date.now()}`,
-      vendor_id: "",
-      order_date: new Date().toISOString().split('T')[0],
-      expected_delivery_date: "",
-      status: "draft",
-      tax_percent: "18",
-      discount_amount: "0",
-      notes: "",
-    });
+  po_number: `PO-${Date.now()}`,
+  vendor_id: "",
+  order_date: new Date().toISOString().split("T")[0],
+  expected_delivery_date: "",
+  status: "draft",
+  payment_status: "pending", // ✅ REQUIRED
+  tax_percent: "18",
+  discount_amount: "0",
+  notes: "",
+});
+
     setLineItems([{ product_id: "", description: "", quantity: 1, unit_price: 0, tax_percent: 18 }]);
   };
 
@@ -419,6 +433,24 @@ if (itemsError) {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="status">Status</Label>
+                    <div className="space-y-2">
+  <Label>Payment Status</Label>
+  <Select
+    value={formData.payment_status}
+    onValueChange={(value) =>
+      setFormData({ ...formData, payment_status: value })
+    }
+  >
+    <SelectTrigger>
+      <SelectValue />
+    </SelectTrigger>
+    <SelectContent>
+      <SelectItem value="pending">Pending</SelectItem>
+      <SelectItem value="paid">Paid</SelectItem>
+    </SelectContent>
+  </Select>
+</div>
+
                     <Select
                       value={formData.status}
                       onValueChange={(value) => setFormData({ ...formData, status: value })}
@@ -631,6 +663,7 @@ if (itemsError) {
               <TableHead>Order Date</TableHead>
               <TableHead>Expected Delivery</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Payment</TableHead>
               <TableHead className="text-right">Total Amount</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
@@ -638,7 +671,7 @@ if (itemsError) {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center">Loading...</TableCell>
+                <TableCell colSpan={7} className="text-center"><EduvancaLoader size={32} /></TableCell>
               </TableRow>
             ) : filteredPurchaseOrders.length === 0 ? (
               <TableRow>
@@ -662,75 +695,121 @@ if (itemsError) {
                       : "-"
                     }
                   </TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Select
-                      value={po.status}
-                      onValueChange={async (value: string) => {
-                        try {
-                          const { data: { user } } = await supabase.auth.getUser();
-                          if (!user) return;
+                  {/* STATUS COLUMN */}
+<TableCell onClick={(e) => e.stopPropagation()}>
+  <Select
+    value={po.status}
+    onValueChange={async (value: string) => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
 
-                          // Update PO status
-                          await supabase
-                            .from("purchase_orders")
-                            .update({ status: value })
-                            .eq("id", po.id);
+        await supabase
+          .from("purchase_orders")
+          .update({ status: value })
+          .eq("id", po.id);
 
-                          // AUTO STOCK INCREASE when set to received
-                          if (value === "received") {
-                            const { data: items } = await supabase
-                              .from("purchase_order_items")
-                              .select("product_id, quantity")
-                              .eq("purchase_order_id", po.id);
+        // AUTO STOCK UPDATE
+        if (value === "received") {
+          const { data: items } = await supabase
+            .from("purchase_order_items")
+            .select("product_id, quantity")
+            .eq("purchase_order_id", po.id);
 
-                            if (items?.length) {
-                              for (const item of items) {
-                                if (!item.product_id) continue;
+          if (items?.length) {
+            for (const item of items) {
+              if (!item.product_id) continue;
 
-                                const { data: product } = await supabase
-                                  .from("products")
-                                  .select("quantity_in_stock")
-                                  .eq("id", item.product_id)
-                                  .single();
+              const { data: product } = await supabase
+                .from("products")
+                .select("quantity_in_stock")
+                .eq("id", item.product_id)
+                .single();
 
-                                const newStock = (product?.quantity_in_stock || 0) + item.quantity;
+              await supabase
+                .from("products")
+                .update({
+                  quantity_in_stock:
+                    (product?.quantity_in_stock || 0) + item.quantity,
+                })
+                .eq("id", item.product_id);
+            }
+          }
+        }
 
-                                await supabase
-                                  .from("products")
-                                  .update({ quantity_in_stock: newStock })
-                                  .eq("id", item.product_id);
-                              }
-                            }
-                            toast.success("Stock increased automatically!");
-                          }
+        setPurchaseOrders(prev =>
+          prev.map(p =>
+            p.id === po.id ? { ...p, status: value } : p
+          )
+        );
 
-                          setPurchaseOrders(prev =>
-  prev.map(p => 
-    p.id === po.id ? { ...p, status: value } : p
-  )
-);
+        toast.success("Status updated");
+      } catch (err) {
+        toast.error("Failed to update status");
+      }
+    }}
+    disabled={po.status === "received"}
+  >
+    <SelectTrigger className={`h-8 ${getStatusColor(po.status)}`}>
+      <SelectValue />
+    </SelectTrigger>
+    <SelectContent>
+      <SelectItem value="draft">Draft</SelectItem>
+      <SelectItem value="pending">Pending</SelectItem>
+      <SelectItem value="approved">Approved</SelectItem>
+      <SelectItem value="received">Received</SelectItem>
+      <SelectItem value="cancelled">Cancelled</SelectItem>
+    </SelectContent>
+  </Select>
+</TableCell>
 
-                          toast.success("Status updated!");
-                        } catch (err) {
-                          console.error(err);
-                          toast.error("Error updating status");
-                        }
-                      }}
-                      disabled={po.status === "received"}
-                      className={`h-8 ${getStatusColor(po.status)} ${po.status === "received" ? "opacity-60" : ""}`}
-                    >
-                      <SelectTrigger className={`h-8 ${getStatusColor(po.status)}`}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="draft">Draft</SelectItem>
-                        <SelectItem value="pending">Pending</SelectItem>
-                        <SelectItem value="approved">Approved</SelectItem>
-                        <SelectItem value="received">Received</SelectItem>
-                        <SelectItem value="cancelled">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
+{/* PAYMENT COLUMN */}
+<TableCell>
+  <Select
+  value={po.payment_status}
+  disabled={
+    po.payment_status === "paid" ||
+    po.status === "cancelled"
+  }
+  onValueChange={async (value: "pending" | "paid") => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      await supabase
+        .from("purchase_orders")
+        .update({ payment_status: value })
+        .eq("id", po.id);
+
+      setPurchaseOrders(prev =>
+        prev.map(p =>
+          p.id === po.id ? { ...p, payment_status: value } : p
+        )
+      );
+
+      toast.success("Payment status updated");
+    } catch {
+      toast.error("Failed to update payment status");
+    }
+  }}
+>
+
+    <SelectTrigger
+      className={`h-8 ${
+        po.payment_status === "paid"
+          ? "bg-green-100 text-green-800 opacity-60 cursor-not-allowed"
+          : "bg-yellow-100 text-yellow-800"
+      }`}
+    >
+      <SelectValue />
+    </SelectTrigger>
+    <SelectContent>
+      <SelectItem value="pending">Pending</SelectItem>
+      <SelectItem value="paid">Paid</SelectItem>
+    </SelectContent>
+  </Select>
+</TableCell>
+
 
                   <TableCell className="text-right">
                     ₹{formatIndianNumber(po.total_amount)}

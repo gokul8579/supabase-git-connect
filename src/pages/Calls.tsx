@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Plus, Phone, Eye } from "lucide-react";
 import { DetailViewDialog, DetailField } from "@/components/DetailViewDialog";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 interface Call {
   id: string;
@@ -53,7 +54,41 @@ const Calls = () => {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setCalls(data || []);
+      // ----- CUSTOM SORTING LOGIC -----
+const now = new Date();
+const priority = {
+  scheduled: 1,  // upcoming (future)
+  missed: 2,
+  cancelled: 3,
+  completed: 4,
+};
+
+const sorted = (data || []).sort((a, b) => {
+  const aDate = a.scheduled_at ? new Date(a.scheduled_at) : new Date(0);
+  const bDate = b.scheduled_at ? new Date(b.scheduled_at) : new Date(0);
+
+  const aType =
+  a.status === "scheduled" && aDate > now ? "scheduled" :
+  a.status === "missed" ? "missed" :
+  a.status === "cancelled" ? "cancelled" :
+  "completed";
+
+const bType =
+  b.status === "scheduled" && bDate > now ? "scheduled" :
+  b.status === "missed" ? "missed" :
+  b.status === "cancelled" ? "cancelled" :
+  "completed";
+
+
+  // If different priority group → sort by group order
+  if (aType !== bType) return priority[aType] - priority[bType];
+
+  // Inside same group → sort by nearest date
+  return aDate.getTime() - bDate.getTime();
+});
+
+setCalls(sorted);
+
     } catch (error: any) {
       toast.error("Error fetching calls");
     } finally {
@@ -105,7 +140,7 @@ const Calls = () => {
       scheduled: "bg-blue-100 text-blue-800",
       completed: "bg-green-100 text-green-800",
       missed: "bg-red-100 text-red-800",
-      cancelled: "bg-gray-100 text-gray-800",
+      cancelled: "bg-red-100 text-red-800",
     };
     return colors[status] || "bg-gray-100 text-gray-800";
   };
@@ -141,7 +176,7 @@ const Calls = () => {
           call_type: data.call_type as any,
           status: data.status as any,
           scheduled_at: data.scheduled_at || null,
-          duration: data.duration ? parseInt(data.duration) : null,
+          
           notes: data.notes,
           outcome: data.outcome,
         })
@@ -276,7 +311,7 @@ const Calls = () => {
               <TableHead>Type</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Scheduled</TableHead>
-              <TableHead>Duration</TableHead>
+              
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -284,7 +319,7 @@ const Calls = () => {
             {loading ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center">
-                  Loading...
+                  <EduvancaLoader size={32} />
                 </TableCell>
               </TableRow>
             ) : calls.length === 0 ? (
@@ -330,9 +365,7 @@ const Calls = () => {
                         })
                       : "-"}
                   </TableCell>
-                  <TableCell>
-                    {call.duration ? `${call.duration} min` : "-"}
-                  </TableCell>
+                 
                   <TableCell>
                     <Button
                       variant="ghost"
@@ -384,7 +417,7 @@ const Calls = () => {
               ]
             },
             { label: "Scheduled", value: selectedCall.scheduled_at || "", type: "datetime", fieldName: "scheduled_at" },
-            { label: "Duration (min)", value: selectedCall.duration, type: "number", fieldName: "duration" },
+            
             { label: "Notes", value: selectedCall.notes, type: "textarea", fieldName: "notes" },
             { label: "Outcome", value: selectedCall.outcome, type: "textarea", fieldName: "outcome" },
           ]}

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Plus, FileText, Download, Trash2, Eye } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 
 interface Paper {
@@ -225,7 +226,7 @@ const [paperToDelete, setPaperToDelete] = useState<Paper | null>(null);
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center">Loading...</TableCell>
+                <TableCell colSpan={4} className="text-center"><EduvancaLoader size={32} /></TableCell>
               </TableRow>
             ) : papers.length === 0 ? (
               <TableRow>

@@ -12,6 +12,7 @@ import { SearchFilter } from "@/components/SearchFilter";
 import { IndianNumberInput } from "@/components/ui/indian-number-input";
 import { formatIndianCurrency } from "@/lib/formatUtils";
 import { DateFilter } from "@/components/DateFilter";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 interface DailyLog {
   id: string;
@@ -320,210 +321,339 @@ const DailyLogs = () => {
               {viewMode ? "View" : (editingLog ? "Edit" : "Add")} Daily Log
             </DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <fieldset disabled={viewMode}>
-            <div className="space-y-2">
-              <Label htmlFor="log_date">Date *</Label>
-              <Input
-                id="log_date"
-                type="date"
-                value={formData.log_date}
-                onChange={(e) => {
-                  setFormData({ ...formData, log_date: e.target.value });
-                  fetchPreviousDayLog(e.target.value);
-                }}
-                required
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="opening_stock">Opening Stock (₹)</Label>
-                <IndianNumberInput
-                  id="opening_stock"
-                  value={formData.opening_stock}
-                  onChange={(value) => setFormData({ ...formData, opening_stock: value })}
-                />
-                {previousDayLog && (
-                  <p className="text-xs text-green-600">
-                    Previous: {formatIndianCurrency(previousDayLog.opening_stock)}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="closing_stock">Closing Stock (₹)</Label>
-                <IndianNumberInput
-                  id="closing_stock"
-                  value={formData.closing_stock}
-                  onChange={(value) => setFormData({ ...formData, closing_stock: value })}
-                />
-                {previousDayLog && (
-                  <p className="text-xs text-green-600">
-                    Previous: {formatIndianCurrency(previousDayLog.closing_stock)}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="sales_amount">Sales Amount (₹)</Label>
-                <IndianNumberInput
-                  id="sales_amount"
-                  value={formData.sales_amount}
-                  onChange={(value) => setFormData({ ...formData, sales_amount: value })}
-                />
-                {previousDayLog && (
-                  <p className="text-xs text-green-600">
-                    Previous: {formatIndianCurrency(previousDayLog.sales_amount)}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="income_amount">Income Amount (₹)</Label>
-                <IndianNumberInput
-                  id="income_amount"
-                  value={formData.income_amount}
-                  onChange={(value) => setFormData({ ...formData, income_amount: value })}
-                />
-                {previousDayLog && (
-                  <p className="text-xs text-green-600">
-                    Previous: {formatIndianCurrency(previousDayLog.income_amount)}
-                  </p>
-                )}
-              </div>
-            </div>
+          {viewMode ? (
+  <div className="space-y-6">
 
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <Label>Expenses</Label>
-                <Button type="button" size="sm" variant="outline" onClick={addExpenseItem}>
-                  <Plus className="h-3 w-3 mr-1" />
-                  Add Expense
-                </Button>
-              </div>
-              {expenseItems.map((item, index) => (
-                <div key={index} className="flex gap-2">
-                  <Input
-                    placeholder="Expense description"
-                    value={item.description}
-                    onChange={(e) => updateExpenseItem(index, "description", e.target.value)}
-                    className="flex-1"
-                  />
-                  <IndianNumberInput
-                    placeholder="Amount"
-                    value={item.amount}
-                    onChange={(value) => updateExpenseItem(index, "amount", value)}
-                    className="w-40"
-                  />
-                  {expenseItems.length > 1 && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => removeExpenseItem(index)}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  )}
-                </div>
-              ))}
-              <p className="text-sm font-medium">
-                Total Expense: {formatIndianCurrency(calculateTotalExpense())}
-              </p>
-              {previousDayLog && (
-                <p className="text-xs text-green-600">
-                  Previous: {formatIndianCurrency(previousDayLog.expense_amount)}
-                </p>
-              )}
-            </div>
+    {/* Title */}
+    <div className="text-2xl font-bold">
+      Daily Log – {new Date(formData.log_date).toLocaleDateString()}
+    </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="number_of_sales">Number of Sales</Label>
-                <Input
-                  id="number_of_sales"
-                  type="number"
-                  value={formData.number_of_sales}
-                  onChange={(e) => setFormData({ ...formData, number_of_sales: e.target.value })}
-                />
-                {previousDayLog && (
-                  <p className="text-xs text-green-600">
-                    Previous: {previousDayLog.number_of_sales}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="number_of_purchases">Number of Purchases</Label>
-                <Input
-                  id="number_of_purchases"
-                  type="number"
-                  value={formData.number_of_purchases}
-                  onChange={(e) => setFormData({ ...formData, number_of_purchases: e.target.value })}
-                />
-                {previousDayLog && (
-                  <p className="text-xs text-green-600">
-                    Previous: {previousDayLog.number_of_purchases}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="cash_in_hand">Cash in Hand (₹)</Label>
-                <IndianNumberInput
-                  id="cash_in_hand"
-                  value={formData.cash_in_hand}
-                  onChange={(value) => setFormData({ ...formData, cash_in_hand: value })}
-                />
-                {previousDayLog && (
-                  <p className="text-xs text-green-600">
-                    Previous: {formatIndianCurrency(previousDayLog.cash_in_hand)}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="bank_balance">Bank Balance (₹)</Label>
-                <IndianNumberInput
-                  id="bank_balance"
-                  value={formData.bank_balance}
-                  onChange={(value) => setFormData({ ...formData, bank_balance: value })}
-                />
-                {previousDayLog && (
-                  <p className="text-xs text-green-600">
-                    Previous: {formatIndianCurrency(previousDayLog.bank_balance)}
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="notes">Notes</Label>
-              <Textarea
-                id="notes"
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                rows={3}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              {viewMode && editingLog && (
-                <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                    Close
-                  </Button>
-                  <Button type="button" variant="destructive" onClick={handleDelete}>
-                    Delete
-                  </Button>
-                  <Button type="button" onClick={handleEdit}>
-                    Edit
-                  </Button>
-                </>
-              )}
-              {!viewMode && (
-                <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit">{editingLog ? "Update" : "Add"} Log</Button>
-                </>
-              )}
-            </div>
-            </fieldset>
-          </form>
+    {/* TOP SUMMARY CARDS */}
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+
+      <div className="p-4 rounded-xl bg-purple-100 border shadow-sm">
+        <div className="text-sm font-medium text-purple-700">Opening Stock</div>
+        <div className="text-xl font-bold text-purple-900">{formatIndianCurrency(editingLog?.opening_stock)}</div>
+        <p className="text-xs text-green-600 mt-1">
+          Prev: {formatIndianCurrency(previousDayLog?.opening_stock || 0)}
+        </p>
+      </div>
+
+      <div className="p-4 rounded-xl bg-indigo-100 border shadow-sm">
+        <div className="text-sm font-medium text-indigo-700">Closing Stock</div>
+        <div className="text-xl font-bold text-indigo-900">{formatIndianCurrency(editingLog?.closing_stock)}</div>
+        <p className="text-xs text-green-600 mt-1">
+          Prev: {formatIndianCurrency(previousDayLog?.closing_stock || 0)}
+        </p>
+      </div>
+
+      <div className="p-4 rounded-xl bg-blue-100 border shadow-sm">
+        <div className="text-sm font-medium text-blue-700">Sales Amount</div>
+        <div className="text-xl font-bold text-blue-900">{formatIndianCurrency(editingLog?.sales_amount)}</div>
+        <p className="text-xs text-green-600 mt-1">
+          Prev: {formatIndianCurrency(previousDayLog?.sales_amount || 0)}
+        </p>
+      </div>
+
+      <div className="p-4 rounded-xl bg-green-100 border shadow-sm">
+        <div className="text-sm font-medium text-green-700">Income Amount</div>
+        <div className="text-xl font-bold text-green-900">{formatIndianCurrency(editingLog?.income_amount)}</div>
+        <p className="text-xs text-green-600 mt-1">
+          Prev: {formatIndianCurrency(previousDayLog?.income_amount || 0)}
+        </p>
+      </div>
+
+    </div>
+
+    {/* SECOND ROW CARDS */}
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+
+      <div className="p-4 rounded-xl bg-red-100 border shadow-sm">
+        <div className="text-sm font-medium text-red-700">Total Expenses</div>
+        <div className="text-xl font-bold text-red-900">{formatIndianCurrency(editingLog?.expense_amount)}</div>
+        <p className="text-xs text-green-600 mt-1">
+          Prev: {formatIndianCurrency(previousDayLog?.expense_amount || 0)}
+        </p>
+      </div>
+
+      <div className="p-4 rounded-xl bg-orange-100 border shadow-sm">
+        <div className="text-sm font-medium text-orange-700">Number of Sales</div>
+        <div className="text-xl font-bold text-orange-900">{editingLog?.number_of_sales}</div>
+        <p className="text-xs text-green-600 mt-1">
+          Prev: {previousDayLog?.number_of_sales || 0}
+        </p>
+      </div>
+
+      <div className="p-4 rounded-xl bg-yellow-100 border shadow-sm">
+        <div className="text-sm font-medium text-yellow-700">Purchases</div>
+        <div className="text-xl font-bold text-yellow-900">{editingLog?.number_of_purchases}</div>
+        <p className="text-xs text-green-600 mt-1">
+          Prev: {previousDayLog?.number_of_purchases || 0}
+        </p>
+      </div>
+    </div>
+
+    {/* CASH CARDS */}
+<div className="grid grid-cols-2 gap-4">
+  <div className="p-4 rounded-xl bg-fuchsia-100 border shadow-sm">
+    <div className="text-sm font-medium text-fuchsia-700">Cash in Hand</div>
+    <div className="text-xl font-bold text-fuchsia-900">{formatIndianCurrency(editingLog?.cash_in_hand)}</div>
+    <p className="text-xs text-green-600 mt-1">
+      Prev: {formatIndianCurrency(previousDayLog?.cash_in_hand || 0)}
+    </p>
+  </div>
+
+  <div className="p-4 rounded-xl bg-cyan-100 border shadow-sm">
+    <div className="text-sm font-medium text-cyan-700">Bank Balance</div>
+    <div className="text-xl font-bold text-cyan-900">{formatIndianCurrency(editingLog?.bank_balance)}</div>
+    <p className="text-xs text-green-600 mt-1">
+      Prev: {formatIndianCurrency(previousDayLog?.bank_balance || 0)}
+    </p>
+  </div>
+</div>
+
+    {/* EXPENSE LIST */}
+    {editingLog?.notes?.includes("Expenses:") && (
+      <div className="p-4 rounded-xl bg-gray-100 border shadow-sm">
+        <div className="text-lg font-semibold mb-2">Expense Breakdown</div>
+
+        {editingLog.notes
+          .split("Expenses: ")[1]
+          ?.split("; ")
+          .map((exp, i) => (
+            <p key={i} className="text-sm text-gray-800">
+              • {exp}
+            </p>
+        ))}
+      </div>
+    )}
+
+    {/* NOTES */}
+    <div className="p-4 rounded-xl bg-white border shadow-sm">
+      <div className="font-semibold mb-1">Notes</div>
+      <p className="text-gray-700 whitespace-pre-wrap">
+  {(editingLog?.notes || "").split("Expenses:")[0].trim() || "No notes"}
+</p>
+    </div>
+
+    {/* ACTION BUTTONS */}
+    <div className="flex justify-end gap-3 pt-4">
+      <Button variant="outline" onClick={() => setOpen(false)}>Close</Button>
+      <Button variant="destructive" onClick={handleDelete}>Delete</Button>
+      <Button onClick={handleEdit}>Edit</Button>
+    </div>
+
+  </div>
+) : (
+  /* EDIT MODE – KEEP YOUR ORIGINAL FORM */
+  <form onSubmit={handleSubmit} className="space-y-4">
+  <fieldset disabled={viewMode}>
+    <div className="space-y-2">
+      <Label htmlFor="log_date">Date *</Label>
+      <Input
+        id="log_date"
+        type="date"
+        value={formData.log_date}
+        onChange={(e) => {
+          setFormData({ ...formData, log_date: e.target.value });
+          fetchPreviousDayLog(e.target.value);
+        }}
+        required
+      />
+    </div>
+
+    <div className="grid grid-cols-2 gap-4">
+      {/* Opening Stock */}
+      <div className="space-y-2">
+        <Label htmlFor="opening_stock">Opening Stock (₹)</Label>
+        <IndianNumberInput
+          id="opening_stock"
+          value={formData.opening_stock}
+          onChange={(value) => setFormData({ ...formData, opening_stock: value })}
+        />
+        {previousDayLog && (
+          <p className="text-xs text-green-600">
+            Previous: {formatIndianCurrency(previousDayLog.opening_stock)}
+          </p>
+        )}
+      </div>
+
+      {/* Closing Stock */}
+      <div className="space-y-2">
+        <Label htmlFor="closing_stock">Closing Stock (₹)</Label>
+        <IndianNumberInput
+          id="closing_stock"
+          value={formData.closing_stock}
+          onChange={(value) => setFormData({ ...formData, closing_stock: value })}
+        />
+        {previousDayLog && (
+          <p className="text-xs text-green-600">
+            Previous: {formatIndianCurrency(previousDayLog.closing_stock)}
+          </p>
+        )}
+      </div>
+
+      {/* Sales Amount */}
+      <div className="space-y-2">
+        <Label htmlFor="sales_amount">Sales Amount (₹)</Label>
+        <IndianNumberInput
+          id="sales_amount"
+          value={formData.sales_amount}
+          onChange={(value) => setFormData({ ...formData, sales_amount: value })}
+        />
+        {previousDayLog && (
+          <p className="text-xs text-green-600">
+            Previous: {formatIndianCurrency(previousDayLog.sales_amount)}
+          </p>
+        )}
+      </div>
+
+      {/* Income Amount */}
+      <div className="space-y-2">
+        <Label htmlFor="income_amount">Income Amount (₹)</Label>
+        <IndianNumberInput
+          id="income_amount"
+          value={formData.income_amount}
+          onChange={(value) => setFormData({ ...formData, income_amount: value })}
+        />
+        {previousDayLog && (
+          <p className="text-xs text-green-600">
+            Previous: {formatIndianCurrency(previousDayLog.income_amount)}
+          </p>
+        )}
+      </div>
+    </div>
+
+    {/* EXPENSE SECTION */}
+    <div className="space-y-2">
+      <div className="flex justify-between items-center">
+        <Label>Expenses</Label>
+        <Button type="button" size="sm" variant="outline" onClick={addExpenseItem}>
+          <Plus className="h-3 w-3 mr-1" />
+          Add Expense
+        </Button>
+      </div>
+
+      {expenseItems.map((item, index) => (
+        <div key={index} className="flex gap-2">
+          <Input
+            placeholder="Expense description"
+            value={item.description}
+            onChange={(e) => updateExpenseItem(index, "description", e.target.value)}
+            className="flex-1"
+          />
+          <IndianNumberInput
+            placeholder="Amount"
+            value={item.amount}
+            onChange={(value) => updateExpenseItem(index, "amount", value)}
+            className="w-40"
+          />
+          {expenseItems.length > 1 && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => removeExpenseItem(index)}
+            >
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          )}
+        </div>
+      ))}
+
+      <p className="text-sm font-medium">
+        Total Expense: {formatIndianCurrency(calculateTotalExpense())}
+      </p>
+
+      {previousDayLog && (
+        <p className="text-xs text-green-600">
+          Previous: {formatIndianCurrency(previousDayLog.expense_amount)}
+        </p>
+      )}
+    </div>
+
+    {/* Last Row */}
+    <div className="grid grid-cols-2 gap-4">
+      <div className="space-y-2">
+        <Label htmlFor="number_of_sales">Number of Sales</Label>
+        <Input
+          id="number_of_sales"
+          type="number"
+          value={formData.number_of_sales}
+          onChange={(e) => setFormData({ ...formData, number_of_sales: e.target.value })}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="number_of_purchases">Number of Purchases</Label>
+        <Input
+          id="number_of_purchases"
+          type="number"
+          value={formData.number_of_purchases}
+          onChange={(e) => setFormData({ ...formData, number_of_purchases: e.target.value })}
+        />
+      </div>
+
+      <div className="space-y-2">
+  <Label htmlFor="cash_in_hand">Cash in Hand (₹)</Label>
+  <IndianNumberInput
+    id="cash_in_hand"
+    value={formData.cash_in_hand}
+    onChange={(value) => setFormData({ ...formData, cash_in_hand: value })}
+  />
+  {previousDayLog && (
+    <p className="text-xs text-green-600">
+      Previous: {formatIndianCurrency(previousDayLog.cash_in_hand || 0)}
+    </p>
+  )}
+</div>
+
+<div className="space-y-2">
+  <Label htmlFor="bank_balance">Bank Balance (₹)</Label>
+  <IndianNumberInput
+    id="bank_balance"
+    value={formData.bank_balance}
+    onChange={(value) => setFormData({ ...formData, bank_balance: value })}
+  />
+  {previousDayLog && (
+    <p className="text-xs text-green-600">
+      Previous: {formatIndianCurrency(previousDayLog.bank_balance || 0)}
+    </p>
+  )}
+</div>
+
+    </div>
+
+    <div className="space-y-2">
+      <Label htmlFor="notes">Notes</Label>
+      <Textarea
+        id="notes"
+        value={formData.notes}
+        onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+        rows={3}
+      />
+    </div>
+
+    <div className="flex justify-end gap-2">
+      {viewMode && editingLog ? (
+        <>
+          <Button type="button" variant="outline" onClick={() => setOpen(false)}>Close</Button>
+          <Button type="button" variant="destructive" onClick={handleDelete}>Delete</Button>
+          <Button type="button" onClick={handleEdit}>Edit</Button>
+        </>
+      ) : (
+        <>
+          <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button type="submit">{editingLog ? "Update" : "Add"} Log</Button>
+        </>
+      )}
+    </div>
+  </fieldset>
+</form>
+
+)}
+
         </DialogContent>
       </Dialog>
 
@@ -542,7 +672,7 @@ const DailyLogs = () => {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center">Loading...</TableCell>
+                <TableCell colSpan={6} className="text-center"><EduvancaLoader size={32} /></TableCell>
               </TableRow>
             ) : filteredLogs.length === 0 ? (
               <TableRow>

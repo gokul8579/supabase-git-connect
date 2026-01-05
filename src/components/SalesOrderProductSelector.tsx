@@ -28,6 +28,7 @@ interface Props {
 
 export const SalesOrderProductSelector = ({ items, onChange }: Props) => {
   const [products, setProducts] = useState<Product[]>([]);
+  
 
   useEffect(() => {
     fetchProducts();

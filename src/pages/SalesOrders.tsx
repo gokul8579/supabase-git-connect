@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ShoppingCart, Plus, Eye, Trash2, Calendar as CalendarIcon, ExternalLink } from "lucide-react";
+import { ShoppingCart, Plus, Eye, Trash2, Calendar as CalendarIcon, ExternalLink, Loader } from "lucide-react";
 import { Link } from "react-router-dom";
 import { InvoiceTemplate } from "@/components/InvoiceTemplate";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -21,6 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { formatLocalDate } from "@/lib/dateUtils";
 import { formatIndianNumber } from "@/lib/formatUtils";
 import { BillingType, calculateLineItemAmounts } from "@/lib/gstCalculator";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 // ----------------------
 // AUTO SALES ORDER NUMBER GENERATOR
@@ -82,6 +83,22 @@ interface SalesOrder {
   show_gst_split?: boolean;
 }
 
+interface SalesOrderItem {
+  product_id: string | null;
+  description: string;
+  quantity: number;
+  unit_price: number;
+
+  cgst_percent: number | null;
+  sgst_percent: number | null;
+  product_gst_percent: number | null;
+
+  cgst_amount: number | null;
+  sgst_amount: number | null;
+  amount: number | null;
+}
+
+
 
 const SalesOrders = () => {
   const [orders, setOrders] = useState<SalesOrder[]>([]);
@@ -109,8 +126,18 @@ const SalesOrders = () => {
     notes: "",
   });
   const [lineItems, setLineItems] = useState<any[]>([
-  { type: "existing", product_id: "", description: "", quantity: 1, unit_price: 0, cgst_percent: 9, sgst_percent: 9 }
+  { 
+    type: "existing",
+    product_id: "",
+    description: "",
+    quantity: 1,
+    unit_price: 0,
+    cost_price: 0,
+    cgst_percent: 9,
+    sgst_percent: 9
+  }
 ]);
+
 
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
@@ -185,6 +212,11 @@ const SalesOrders = () => {
               }, 0);
             }
           }
+
+          // 🔽 APPLY ORDER LEVEL DISCOUNT TO PROFIT
+const discount = Number(order.discount_amount || 0);
+profit = Math.max(0, profit - discount);
+
 
           return {
   ...order,
@@ -290,9 +322,10 @@ const normalizeBillingType = (value: string | null | undefined): BillingType => 
   const handleViewOrder = async (order: SalesOrder) => {
     try {
       const { data: items, error: itemsError } = await supabase
-        .from("sales_order_items")
-        .select("*")
-        .eq("sales_order_id", order.id);
+  .from("sales_order_items")
+  .select("*")
+  .eq("sales_order_id", order.id) as { data: SalesOrderItem[], error: any };
+
 
       if (itemsError) throw itemsError;
 
@@ -328,14 +361,21 @@ if (order.party_type === "customer") {
         customer_state: partyData?.state,
         customer_postal_code: partyData?.postal_code,
         items: (items || []).map(item => ({
-          product_id: item.product_id ?? null,
-          description: item.description || "Service",
-          quantity: Number(item.quantity) || 1,
-          unit_price: Number(item.unit_price) || 0,
-          cgst_amount: Number(item.cgst_amount || 0),
-          sgst_amount: Number(item.sgst_amount || 0),
-          amount: Number(item.amount || 0),
-        })),
+  product_id: item.product_id ?? null,
+  description: item.description || "Service",
+  quantity: Number(item.quantity) || 1,
+  unit_price: Number(item.unit_price) || 0,
+
+  // GST % from DB
+  cgst_percent: Number(item.cgst_percent ?? 0),
+  sgst_percent: Number(item.sgst_percent ?? 0),
+  product_gst_percent: Number(item.product_gst_percent ?? 0),
+
+  // GST amounts
+  cgst_amount: Number(item.cgst_amount ?? 0),
+  sgst_amount: Number(item.sgst_amount ?? 0),
+  amount: Number(item.amount ?? 0),
+})),
         subtotal: Number(order.subtotal || 0) || (items || []).reduce((sum, item) => 
           sum + (Number(item.quantity || 0) * Number(item.unit_price || 0)), 0),
         tax_amount: Number(order.tax_amount || 0),
@@ -359,8 +399,17 @@ if (order.party_type === "customer") {
 
   const handleDeleteOrder = async () => {
     if (!orderToDelete) return;
+
+    const orderRecord = orders.find(o => o.id === orderToDelete);
+if (orderRecord?.status === "delivered") {
+  toast.error("Delivered orders cannot be deleted.");
+  setDeleteDialogOpen(false);
+  setOrderToDelete(null);
+  return;
+}
     
     try {
+      
       // Delete order items first
       const { error: itemsError } = await supabase
         .from("sales_order_items")
@@ -623,11 +672,19 @@ const gst = calculateLineItemAmounts(
   description: item.description,
   quantity: item.quantity,
   unit_price: item.unit_price,
+
+  // SAVE GST % ALSO (FIX)
+  cgst_percent: Number(item.cgst_percent) || 0,
+  sgst_percent: Number(item.sgst_percent) || 0,
+  product_gst_percent:
+    (Number(item.cgst_percent) || 0) + (Number(item.sgst_percent) || 0),
+
   taxable_value: gst.taxableValue,
   cgst_amount: gst.cgstAmount,
   sgst_amount: gst.sgstAmount,
   amount: gst.totalAmount,
 };
+
                   // Only include product_id for existing products (not services)
                   if (item.type === "existing" && item.product_id) {
                     itemData.product_id = item.product_id;
@@ -670,7 +727,19 @@ const gst = calculateLineItemAmounts(
   discount_amount: "0",
   notes: "",
 });
-              setLineItems([{ type: "existing", product_id: "", description: "", quantity: 1, unit_price: 0, cgst_percent: 9, sgst_percent: 9 }]);
+              setLineItems([
+  {
+    type: "existing",
+    product_id: "",
+    description: "",
+    quantity: 1,
+    unit_price: 0,
+    cost_price: 0,
+    cgst_percent: 9,
+    sgst_percent: 9,
+  }
+]);
+
               fetchOrders();
             } catch (err: any) {
               console.error("Error creating sales order:", err);
@@ -737,8 +806,7 @@ const gst = calculateLineItemAmounts(
                   <SelectContent>
                     <SelectItem value="draft">Draft</SelectItem>
                     <SelectItem value="confirmed">Confirmed</SelectItem>
-                    <SelectItem value="shipped">Shipped</SelectItem>
-                    <SelectItem value="delivered">Delivered</SelectItem>
+                    
                     <SelectItem value="cancelled">Cancelled</SelectItem>
                   </SelectContent>
                 </Select>
@@ -765,14 +833,54 @@ const gst = calculateLineItemAmounts(
                 <Label htmlFor="delivery_date">Delivery Date</Label>
                 <Input id="delivery_date" type="date" value={formData.delivery_date} onChange={(e) => setFormData({ ...formData, delivery_date: e.target.value })} />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="discount_amount">Discount Amount (₹)</Label>
-                <Input id="discount_amount" type="number" step="0.01" value={formData.discount_amount} onChange={(e) => setFormData({ ...formData, discount_amount: e.target.value })} />
-              </div>
+              {/* Row: Discount (left) + empty cell (right) */}
+<div className="grid grid-cols-2 gap-4">
+  <div className="space-y-2">
+    <Label htmlFor="discount_amount">Discount Amount (₹)</Label>
+    <Input
+      id="discount_amount"
+      type="number"
+      step="0.01"
+      value={formData.discount_amount}
+      onChange={(e) =>
+        setFormData({ ...formData, discount_amount: e.target.value })
+      }
+    />
+  </div>
+
+  {/* Right side empty so layout stays consistent */}
+  <div></div>
+</div>
+
+{/* Row BELOW: Warning box aligned under right column */}
+<div className="grid grid-cols-2 gap-4 -mt-1">
+  <div></div>
+  <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 leading-relaxed w-full">
+    <span className="font-semibold">⚠️ Warning:</span>
+    Do not change status directly to <strong>Shipped</strong> or <strong>Delivered</strong>.
+    It may affect stock quantity.
+  </div>
+</div>
+
+
+              
             </div>
             
 
-            <SalesOrderProductSelector2 items={lineItems} onChange={setLineItems} />
+            <SalesOrderProductSelector2
+  items={lineItems}
+  onChange={(updated) => {
+    const fixed = updated.map(it => ({
+      ...it,
+      description: it.description ?? "",
+      cost_price: it.cost_price ?? 0,
+      cgst_percent: it.cgst_percent ?? 0,
+      sgst_percent: it.sgst_percent ?? 0
+    }));
+    setLineItems(fixed);
+  }}
+/>
+
 
             <div className="space-y-2">
               <Label htmlFor="notes">Notes</Label>
@@ -806,7 +914,7 @@ const gst = calculateLineItemAmounts(
             {loading ? (
               <TableRow>
                 <TableCell colSpan={8} className="text-center">
-                  Loading...
+                  <EduvancaLoader size={32} />
                 </TableCell>
               </TableRow>
             ) : filteredOrders.length === 0 ? (
@@ -899,15 +1007,40 @@ const gst = calculateLineItemAmounts(
                       disabled={order.status === "delivered"}
                     >
                       <SelectTrigger className={`h-8 ${getStatusColor(order.status)}`}>
-                        <SelectValue />
-                      </SelectTrigger>
+  <span className="capitalize">
+    {order.status}
+  </span>
+</SelectTrigger>
+
                       <SelectContent>
-                        <SelectItem value="draft">Draft</SelectItem>
-                        <SelectItem value="confirmed">Confirmed</SelectItem>
-                        <SelectItem value="shipped">Shipped</SelectItem>
-                        <SelectItem value="delivered">Delivered</SelectItem>
-                        <SelectItem value="cancelled">Cancelled</SelectItem>
-                      </SelectContent>
+  {/* DRAFT */}
+  {order.status === "draft" && (
+    <>
+      <SelectItem value="draft">Draft</SelectItem>
+      <SelectItem value="confirmed">Confirmed</SelectItem>
+      <SelectItem value="cancelled">Cancelled</SelectItem>
+    </>
+  )}
+
+  {/* CONFIRMED → ONLY CANCELLED */}
+  {order.status === "confirmed" && (
+    <SelectItem value="cancelled">Cancelled</SelectItem>
+  )}
+
+  {/* SHIPPED */}
+  {order.status === "shipped" && (
+    <>
+      <SelectItem value="shipped">Shipped</SelectItem>
+      <SelectItem value="delivered">Delivered</SelectItem>
+      <SelectItem value="cancelled">Cancelled</SelectItem>
+    </>
+  )}
+
+
+</SelectContent>
+
+
+
                     </Select>
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()} className="hidden md:table-cell text-xs md:text-sm">

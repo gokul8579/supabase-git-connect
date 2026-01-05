@@ -81,7 +81,7 @@ export function AppSidebar() {
             <div className="p-2 bg-primary rounded-lg">
               <BarChart3 className="h-5 w-5 text-primary-foreground" />
             </div>
-            <span className="font-bold text-lg">Eduvanca CRM</span>
+            <span className="font-bold text-lg">Eduvanca One</span>
           </div>
         </div>
         

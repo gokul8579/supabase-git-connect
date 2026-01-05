@@ -23,12 +23,15 @@ interface Deal {
   id: string;
   title: string;
   stage: string;
-  value: number | null;
+  value: number | null;  
+  discount_amount?: number | null;  
   expected_profit?: number | null;
   probability: number | null;
   expected_close_date: string | null;
   notes: string | null;
   customer_id: string | null;
+ 
+  deal_items?: any[];
   items?: any[];
 }
 
@@ -37,11 +40,40 @@ interface DraggableDealProps {
   onClick: () => void;
 }
 
+// --- LineItem used for dealItems state ---
+interface DealLineItem {
+  type: "existing" | "service";
+  product_id: string | null;   // required, matches selector expectation
+  description: string;
+  quantity: number;
+  unit_price: number;
+  cost_price?: number;
+  cgst_percent: number;
+  sgst_percent: number;
+  available_stock?: number;
+   _needsStockUpdate?: boolean;
+}
+
+
+// --- For typing joined rows returned from Supabase queries ---
+interface DealItemJoin {
+  id: string;
+  quantity: number;
+  deals?: { id: string; stage: string } | null;
+}
+
+interface SalesOrderJoin {
+  id: string;
+  quantity: number;
+  sales_orders?: { id: string; status: string } | null;
+}
+
+
 
 
 const DraggableDeal = ({ deal, onClick }: DraggableDealProps) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: deal.id });
-  
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -53,6 +85,15 @@ const DraggableDeal = ({ deal, onClick }: DraggableDealProps) => {
     deal.stage === "closed_lost" ? "bg-red-100 border-red-300" : 
     "";
 
+  // ✅ Calculate Grand Total
+  const lineTotal = deal.deal_items
+  ? deal.deal_items.reduce((sum, item) => sum + Number(item.total_amount || 0), 0)
+  : deal.value || 0;
+
+const discount = Number(deal.discount_amount || 0);
+const grandTotal = Math.max(0, lineTotal - discount);
+
+
   return (
     <div
       ref={setNodeRef}
@@ -63,11 +104,11 @@ const DraggableDeal = ({ deal, onClick }: DraggableDealProps) => {
       className={`p-3 border rounded-lg hover:bg-accent cursor-move transition-colors ${bgColor}`}
     >
       <div className="font-medium text-sm">{deal.title}</div>
-      {deal.value && (
-        <div className="text-sm text-muted-foreground">
-          ₹{Number(deal.value).toLocaleString()}
-        </div>
-      )}
+
+      <div className="text-sm text-muted-foreground">
+        ₹{Number(grandTotal).toLocaleString()}
+      </div>
+
       {deal.probability !== null && (
         <div className="text-xs text-muted-foreground">
           {deal.probability}% probability
@@ -76,6 +117,7 @@ const DraggableDeal = ({ deal, onClick }: DraggableDealProps) => {
     </div>
   );
 };
+
 
 // Droppable column wrapper to allow dropping deals into any stage
 const StageColumn = ({ id, children }: { id: string; children: React.ReactNode }) => {
@@ -97,6 +139,74 @@ const stages = [
 
 const Pipeline = () => {
 
+// --- STOCK CHECK FUNCTION (typed) ---
+const fetchAvailableStock = async (productId: string) => {
+  // 1) fetch product quantity
+  const { data: product, error: prodErr } = await supabase
+    .from("products")
+    .select("quantity_in_stock")
+    .eq("id", productId)
+    .single();
+
+  if (prodErr) {
+    console.error("Error fetching product stock:", prodErr);
+    return 0;
+  }
+  const actualStock = Number(product?.quantity_in_stock || 0);
+
+  // 2) reserved in pipeline deals (joined via FK)
+  const { data: reservedDealsRaw, error: rdErr } = await supabase
+    .from("deal_items")
+    .select(`
+      id,
+      quantity,
+      deals:deals!deal_items_deal_id_fkey (
+        id,
+        stage
+      )
+    `)
+    .eq("product_id", productId)
+    .returns<DealItemJoin[]>(); // <-- helpful for TS
+
+  if (rdErr) {
+    console.error("Error fetching reserved deals:", rdErr);
+  }
+
+  const reservedPipeline =
+    (reservedDealsRaw
+      ?.filter((d) => d.deals && d.deals.stage !== "closed_won" && d.deals.stage !== "closed_lost")
+      .reduce((sum, d) => sum + (d.quantity || 0), 0)) || 0;
+
+  // 3) reserved in draft sales orders (joined via FK)
+  const { data: reservedSORaw, error: rsErr } = await supabase
+    .from("sales_order_items")
+    .select(`
+      id,
+      quantity,
+      sales_orders:sales_orders!sales_order_items_sales_order_id_fkey (
+        id,
+        status
+      )
+    `)
+    .eq("product_id", productId)
+    .returns<SalesOrderJoin[]>(); // <-- helpful for TS
+
+  if (rsErr) {
+    console.error("Error fetching reserved sales orders:", rsErr);
+  }
+
+  const reservedSOQty =
+    (reservedSORaw
+      ?.filter((s) => s.sales_orders && s.sales_orders.status === "draft")
+      .reduce((sum, s) => sum + (s.quantity || 0), 0)) || 0;
+
+  return actualStock - reservedPipeline - reservedSOQty;
+};
+
+
+
+
+
   const navigate = useNavigate();
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,6 +221,7 @@ const Pipeline = () => {
     //stage: "enquiry",
   stage: "enquiry" as Database["public"]["Enums"]["deal_stage"],
     value: "",
+    discount_amount: "",    
     probability: "50",
     expected_close_date: "",
     expected_profit: "",
@@ -119,9 +230,57 @@ const Pipeline = () => {
     customer_id: "",
   });
   // Allow adding products inside a deal
-const [dealItems, setDealItems] = useState<any[]>([
-  { type: "existing", product_id: "", description: "", quantity: 1, unit_price: 0 }
+const [dealItems, setDealItems] = useState<DealLineItem[]>([
+  { 
+    type: "existing",
+    product_id: "",
+    description: "",
+    quantity: 1,
+    unit_price: 0,
+    cgst_percent: 0,
+    sgst_percent: 0
+  }
 ]);
+
+
+useEffect(() => {
+  const timer = setTimeout(async () => {
+    let changed = false;
+
+    const updated = await Promise.all(
+      dealItems.map(async (item) => {
+        if (item.type === "existing" && item.product_id && item._needsStockUpdate) {
+          const available = await fetchAvailableStock(item.product_id);
+
+          let quantity = item.quantity;
+          if (quantity > available) {
+            toast.error(`Only ${available} units available in stock.`);
+            quantity = available; // auto-clamp
+            changed = true;
+          }
+
+          return {
+            ...item,
+            available_stock: available,
+            quantity,
+            _needsStockUpdate: false,
+          };
+        }
+
+        return item;
+      })
+    );
+
+    if (changed) {
+      setDealItems(updated);  // safely update AFTER user stops typing
+    }
+  }, 400);
+
+  return () => clearTimeout(timer);
+}, [dealItems]);
+
+
+
 
 
   const sensors = useSensors(
@@ -150,19 +309,48 @@ useEffect(() => {
     const price = Number(item.unit_price || 0);
     const cost = Number(item.cost_price || 0);
 
-    // Deal Value
     totalValue += qty * price;
 
-    // Profit Calculation (unit_price - cost_price) × qty
-    totalProfit += qty * (price - cost);
+    if (item.type === "existing") {
+      totalProfit += qty * (price - cost);
+    }
   });
 
+  const discount = Number(formData.discount_amount || 0);
+
   setFormData(prev => ({
-  ...prev,
-  value: totalValue.toString(),
-  expected_profit: totalProfit.toString(),
-}));
-}, [dealItems]);
+    ...prev,
+    value: Math.max(0, totalValue - discount).toString(),       // ✅ APPLY DISCOUNT
+    expected_profit: Math.max(0, totalProfit - discount).toString(), // ✅ APPLY DISCOUNT
+  }));
+}, [dealItems, formData.discount_amount]);
+
+
+
+
+
+
+const handleDeleteDeal = async () => {
+  if (!selectedDeal) return;
+
+  if (selectedDeal.stage === "closed_won") {
+    toast.error("Closed-Won deals cannot be deleted.");
+    return;
+  }
+
+  try {
+    await supabase.from("deal_items").delete().eq("deal_id", selectedDeal.id);
+    await supabase.from("deals").delete().eq("id", selectedDeal.id);
+
+    toast.success("Deal deleted successfully.");
+    setDetailOpen(false);
+    fetchDeals();
+  } catch (err) {
+    console.error(err);
+    toast.error("Error deleting deal.");
+  }
+};
+
 
 
 
@@ -191,12 +379,12 @@ useEffect(() => {
 
       const { data, error } = await supabase
         .from("deals")
-        .select("*")
+        .select("*, deal_items(*)")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setDeals(data || []);
+      setDeals((data as unknown as Deal[]) || []);
     } catch (error: any) {
       toast.error("Error fetching deals");
     } finally {
@@ -210,6 +398,21 @@ useEffect(() => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // STOCK VALIDATION BEFORE CREATING DEAL
+for (const item of dealItems) {
+  if (item.type === "existing" && item.product_id) {
+    const available = item.available_stock ?? await fetchAvailableStock(item.product_id);
+
+    if (item.quantity > available) {
+      toast.error(
+        `Deal cannot be created. Product exceeds available stock (${available}).`
+      );
+      return;
+    }
+  }
+}
+
+
       const { data: deal, error } = await supabase
   .from("deals")
   .insert([{
@@ -217,6 +420,10 @@ useEffect(() => {
     //stage: formData.stage,
     stage: formData.stage as Database["public"]["Enums"]["deal_stage"],
     value: formData.value ? parseFloat(formData.value) : null,
+    discount_amount: formData.discount_amount
+  ? parseFloat(formData.discount_amount)
+  : 0,
+
     probability: parseInt(formData.probability),
     expected_close_date: formData.expected_close_date || null,
     expected_profit: formData.expected_profit ? parseFloat(formData.expected_profit) : null,
@@ -229,6 +436,16 @@ useEffect(() => {
   .single();
 
 if (error) throw error;
+
+// ⬅️ ADD THIS BLOCK HERE
+const { data: settings } = await supabase
+  .from("company_settings")
+  .select("billing_type")
+  .eq("user_id", user.id)
+  .maybeSingle();
+
+const billingType = settings?.billing_type || "exclusive_gst";
+
 
 
       // Insert deal items into deal_items table
@@ -253,10 +470,20 @@ if (dealItems.length > 0) {
 
     const amount = unit_price * quantity;
 
-    // Compute taxable + tax + total
-    let taxableValue = amount;
-    let totalTax = (amount * gstRate) / 100;
-    let totalAmount = taxableValue + totalTax;
+let taxableValue = 0;
+let totalTax = 0;
+let totalAmount = 0;
+
+if (billingType === "inclusive_gst") {
+  taxableValue = (amount * 100) / (100 + gstRate);
+  totalTax = amount - taxableValue;
+  totalAmount = amount; // GST already included
+} else {
+  taxableValue = amount;
+  totalTax = (amount * gstRate) / 100;
+  totalAmount = taxableValue + totalTax;
+}
+
 
     return {
       deal_id: deal.id,
@@ -291,6 +518,7 @@ if (dealItems.length > 0) {
   title: "",
   stage: "enquiry" as Database["public"]["Enums"]["deal_stage"],
   value: "",
+  discount_amount: "",
   probability: "50",
   expected_close_date: "",
   expected_profit: "",
@@ -299,8 +527,18 @@ if (dealItems.length > 0) {
   customer_id: "",
 });
       setDealItems([
-  { type: "existing", product_id: "", description: "", quantity: 1, unit_price: 0 }
+  {
+    type: "existing",
+    product_id: "",
+    description: "",
+    quantity: 1,
+    unit_price: 0,
+    cgst_percent: 0,
+    sgst_percent: 0,
+  }
 ]);
+
+
       fetchDeals();
     } catch (error: any) {
       toast.error("Error creating deal");
@@ -320,6 +558,11 @@ if (dealItems.length > 0) {
     const dealId = active.id as string;
     const deal = deals.find(d => d.id === dealId);
     if (!deal) return;
+
+      if (deal.stage === "closed_won") {
+    toast.error("Closed-Won deals cannot be moved.");
+    return;
+  }
     
     // Prefer container stage id from droppable data
     let newStage: string | null = (over.data?.current as any)?.stageId || null;
@@ -344,6 +587,36 @@ if (dealItems.length > 0) {
         .update({ stage: newStage as Database["public"]["Enums"]["deal_stage"] })
         .eq("id", dealId);
 
+        // ---------------------------------------------
+// AUTO-REDUCE STOCK WHEN DEAL BECOMES CLOSED_WON
+if (newStage === "closed_won" && deal.stage !== "closed_won") {
+  try {
+    const { data: dealItems } = await supabase
+      .from("deal_items")
+      .select("product_id, quantity")
+      .eq("deal_id", dealId);
+
+    if (dealItems && dealItems.length > 0) {
+      for (const item of dealItems) {
+        if (!item.product_id) continue;
+
+        await (supabase as any).rpc("decrement_stock", {
+  product_id: item.product_id,
+  qty_to_reduce: item.quantity
+});
+
+      }
+    }
+
+    toast.success("Stock updated for closed won deal!");
+  } catch (err) {
+    console.error(err);
+    toast.error("Stock update failed");
+  }
+}
+
+
+
       if (error) throw error;
 
       setDeals(prevDeals => prevDeals.map(d => d.id === dealId ? { ...d, stage: newStage as Database["public"]["Enums"]["deal_stage"] } : d));
@@ -366,9 +639,24 @@ if (dealItems.length > 0) {
   if (error) console.error("Error loading deal items:", error);
 
   setSelectedDeal({
-    ...latestDeal,
-    items: items || [],
-  });
+  ...latestDeal,
+  items: (items as any[]) || [],
+});
+
+setDealItems(
+  (items as any[]).map(i => ({
+    type: i.product_id ? "existing" : "service",
+    product_id: i.product_id,
+    description: i.description,
+    quantity: i.quantity,
+    unit_price: i.unit_price,
+    cost_price: i.cost_price,
+    cgst_percent: i.cgst_percent,
+    sgst_percent: i.sgst_percent
+  }))
+);
+
+
 
   setDetailOpen(true);
 };
@@ -419,7 +707,17 @@ if (dealItems.length > 0) {
 
 
   const handleDetailEdit = async (data: Record<string, any>) => {
-    if (!selectedDeal) return;
+  if (!selectedDeal) return;
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    toast.error("User not authenticated");
+    return;
+  }
+
 
     try {
       const { error } = await supabase
@@ -428,6 +726,9 @@ if (dealItems.length > 0) {
           title: data.title,
           stage: data.stage as Database["public"]["Enums"]["deal_stage"],
           value: data.value ? parseFloat(data.value) : null,
+          discount_amount: data.discount_amount
+  ? parseFloat(data.discount_amount)
+  : 0,
           probability: data.probability ? parseInt(data.probability) : null,
           expected_close_date: data.expected_close_date || null,
           notes: data.notes,
@@ -436,13 +737,70 @@ if (dealItems.length > 0) {
 
       if (error) throw error;
 
+      // --- Update Deal Items ---
+try {
+  // 1) delete old items
+  await supabase.from("deal_items").delete().eq("deal_id", selectedDeal.id);
+
+  // 2) insert updated items
+  const itemsToInsert = dealItems.map(item => {
+    const quantity = Number(item.quantity);
+    const unit_price = Number(item.unit_price);
+    const cost_price = Number(item.cost_price || 0);
+
+    const cgst = Number(item.cgst_percent || 0);
+    const sgst = Number(item.sgst_percent || 0);
+    const gstRate = cgst + sgst;
+
+    const amount = unit_price * quantity;
+    const taxableValue = amount;
+    const totalTax = (amount * gstRate) / 100;
+    const totalAmount = taxableValue + totalTax;
+
+    return {
+      deal_id: selectedDeal.id,
+      product_id: item.type === "existing" ? item.product_id : null,
+      description: item.description,
+      quantity,
+      unit_price,
+      cost_price,
+      cgst_percent: cgst,
+      sgst_percent: sgst,
+      taxable_value: taxableValue,
+      total_tax: totalTax,
+      total_amount: totalAmount,
+     // user_id: selectedDeal.customer_id,
+     user_id: user.id,
+    };
+  });
+
+  if (itemsToInsert.length > 0) {
+    await supabase.from("deal_items").insert(itemsToInsert);
+  }
+
+} catch (err) {
+  console.error("Error updating deal items:", err);
+  toast.error("Some deal items could not be saved.");
+}
+
+
       // Update local state immediately
       setDeals(prevDeals => prevDeals.map(d => 
-        d.id === selectedDeal.id 
-          ? { ...d, ...data, value: data.value ? parseFloat(data.value) : null, probability: data.probability ? parseInt(data.probability) : null }
-          : d
-      ));
-      setSelectedDeal({ ...selectedDeal, ...data, value: data.value ? parseFloat(data.value) : null, probability: data.probability ? parseInt(data.probability) : null });
+  d.id === selectedDeal.id 
+    ? {
+        ...d,
+        ...data,
+        value: data.value ? parseFloat(data.value) : null,
+        discount_amount: data.discount_amount
+          ? parseFloat(data.discount_amount)
+          : 0,
+      }
+    : d
+));
+
+      setSelectedDeal({ ...selectedDeal, ...data, value: data.value ? parseFloat(data.value) : null, discount_amount: data.discount_amount
+    ? parseFloat(data.discount_amount)
+    : 0,probability: data.probability ? parseInt(data.probability) : null });
 
       toast.success("Deal updated successfully!");
       setDetailOpen(false);
@@ -455,20 +813,33 @@ if (dealItems.length > 0) {
     ...stage,
     deals: deals.filter((deal) => deal.stage === stage.value),
     totalValue: deals
-      .filter((deal) => deal.stage === stage.value)
-      .reduce((sum, deal) => sum + (Number(deal.value) || 0), 0),
+  .filter((deal) => deal.stage === stage.value)
+  .reduce((sum, deal) => {
+    const lineTotal = deal.deal_items
+      ? deal.deal_items.reduce(
+          (s: number, item: any) => s + Number(item.total_amount || 0),
+          0
+        )
+      : Number(deal.value) || 0;
+
+    //return sum + lineTotal;
+    const discount = Number(deal.discount_amount || 0);
+return sum + Math.max(0, lineTotal - discount);
+
+  }, 0),
+
   }));
 
   const activeDeal = activeDealId ? deals.find(d => d.id === activeDealId) : null;
 
   const detailFields: DetailField[] = selectedDeal ? [
     { label: "Title", value: selectedDeal.title, type: "text", fieldName: "title" },
-    { 
-      label: "Stage", 
-      //value: selectedDeal.stage, 
-      value: selectedDeal.stage as Database["public"]["Enums"]["deal_stage"],
-      type: "select",
-      fieldName: "stage",
+    {
+  label: "Stage",
+  value: selectedDeal.stage as Database["public"]["Enums"]["deal_stage"],
+  type: "select",
+  fieldName: "stage",
+  disabled: selectedDeal.stage === "closed_won",
       selectOptions: stages.map(s => ({
   value: s.value as Database["public"]["Enums"]["deal_stage"],
   label: s.label
@@ -476,6 +847,13 @@ if (dealItems.length > 0) {
 
     },
     { label: "Value (₹)", value: selectedDeal.value?.toString() || "", type: "number", fieldName: "value" },
+    {
+  label: "Discount (₹)",
+  value: selectedDeal.discount_amount?.toString() || "0",
+  type: "number",
+  fieldName: "discount_amount",
+},
+
     { label: "Expected Profit (₹)", value: selectedDeal.expected_profit?.toString() || "0", type: "number", fieldName: "expected_profit" },
     { label: "Probability (%)", value: selectedDeal.probability?.toString() || "", type: "number", fieldName: "probability" },
     { label: "Expected Close Date", value: selectedDeal.expected_close_date || "", type: "date", fieldName: "expected_close_date" },
@@ -483,24 +861,27 @@ if (dealItems.length > 0) {
 
     // --- DEAL ITEMS (READ-ONLY DISPLAY) ---
 // --- DEAL ITEMS FIRST ---
-selectedDeal.items && selectedDeal.items.length > 0
-  ? {
-      label: "Deal Items",
-      type: "custom",
-      fieldName: "items",
-      value: selectedDeal.items.map((item: any) => ({
-        name: item.products?.name ?? item.description,
-        qty: item.quantity,
-        price: item.unit_price,
-        total: item.total_amount,
-      })),
-    }
-  : {
-      label: "Deal Items",
-      type: "custom",
-      fieldName: "items",
-      value: "No items found",
-    },
+{
+  label: "Deal Items",
+  type: "custom",
+  //fieldName: "items",
+  value:
+    selectedDeal.items && selectedDeal.items.length > 0
+      ? selectedDeal.items.map((item: any) => ({
+          name: item.products?.name ?? item.description,
+          qty: item.quantity,
+          price: item.unit_price,
+          total: item.total_amount,
+          cgst_percent: item.cgst_percent,
+          sgst_percent: item.sgst_percent,
+          taxable_value: item.taxable_value,
+          total_tax: item.total_tax,
+        }))
+      : [],
+},
+
+
+
 
 // NOW put Notes BELOW the bill summary
 {
@@ -605,6 +986,19 @@ selectedDeal.items && selectedDeal.items.length > 0
                   />
                 </div>
                 <div className="space-y-2">
+  <Label htmlFor="discount_amount">Discount (₹)</Label>
+  <Input
+    id="discount_amount"
+    type="number"
+    step="0.01"
+    value={formData.discount_amount}
+    onChange={(e) =>
+      setFormData({ ...formData, discount_amount: e.target.value })
+    }
+  />
+</div>
+
+                <div className="space-y-2">
                   <Label htmlFor="probability">Probability (%)</Label>
                   <Input
                     id="probability"
@@ -638,7 +1032,47 @@ selectedDeal.items && selectedDeal.items.length > 0
               <div className="space-y-2">
                 {/* Product Selection */}
 <Label>Products / Services</Label>
-<SalesOrderProductSelector2 items={dealItems} onChange={setDealItems} />
+<SalesOrderProductSelector2
+  items={dealItems}
+  onChange={async (updatedItems) => {
+    // Map to a new array — don't mutate directly
+    const newItems: DealLineItem[] = [];
+
+    for (const itm of updatedItems) {
+  let cgst = itm.cgst_percent ?? 0;
+  let sgst = itm.sgst_percent ?? 0;
+
+  // ✅ AUTO-FETCH GST FROM PRODUCT MASTER
+if (itm.product_id) {
+  const { data: product } = await supabase
+    .from("products")
+    .select("gst_rate")
+    .eq("id", itm.product_id)
+    .single();
+
+  const gstRate = Number(product?.gst_rate || 0);
+  cgst = gstRate / 2;
+  sgst = gstRate / 2;
+}
+
+
+  const item: DealLineItem = {
+    ...itm,
+    description: itm.description ?? "",
+    cgst_percent: cgst,
+    sgst_percent: sgst,
+    _needsStockUpdate: true,
+  };
+
+  newItems.push(item);
+}
+
+
+    setDealItems(newItems);
+  }}
+/>
+
+
                 <Label htmlFor="notes">Notes</Label>
                 <Textarea
                   id="notes"
@@ -723,7 +1157,16 @@ selectedDeal.items && selectedDeal.items.length > 0
         title="Deal Details"
         fields={detailFields}
         onEdit={handleDetailEdit}
-        actions={<></>}
+        actions={
+  selectedDeal?.stage === "closed_won" ? (
+    <p className="text-red-500 text-sm">Closed-Won deals cannot be deleted.</p>
+  ) : (
+    <Button variant="destructive" onClick={handleDeleteDeal}>
+      Delete Deal
+    </Button>
+  )
+}
+
 
       />
     </div>

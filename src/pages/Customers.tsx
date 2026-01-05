@@ -8,13 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Plus, Mail, Phone, MapPin, Briefcase, Download } from "lucide-react";
+import { Plus, Mail, Phone, MapPin, Briefcase, Download, Building } from "lucide-react";
 import { DetailViewDialog, DetailField } from "@/components/DetailViewDialog";
 import { SearchFilter } from "@/components/SearchFilter";
 import { exportToCSV } from "@/lib/csvExport";
 import { formatLocalDate } from "@/lib/dateUtils";
 import { format } from "date-fns";
 import ImportContactsDialog from "@/components/ImportContactsDialog";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 interface Customer {
   id: string;
@@ -242,12 +243,12 @@ cin_number: data.cin_number,
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 w-full">
         <div>
           <h1 className="text-3xl font-bold">Customers</h1>
           <p className="text-muted-foreground">Manage your customer database</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
   <Button variant="outline" onClick={handleExportCSV} disabled={filteredCustomers.length === 0}>
     <Download className="h-4 w-4 mr-2" />
     Export CSV
@@ -418,7 +419,7 @@ cin_number: data.cin_number,
             {loading ? (
               <TableRow>
                 <TableCell colSpan={4} className="text-center">
-                  Loading...
+                  <EduvancaLoader size={32} />
                 </TableCell>
               </TableRow>
             ) : customers.length === 0 ? (
@@ -451,7 +452,17 @@ cin_number: data.cin_number,
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>{customer.company || "-"}</TableCell>
+                  <TableCell>
+  {customer.company ? (
+    <div className="flex items-center gap-1 text-sm">
+      <Building className="h-3 w-3" />
+      {customer.company}
+    </div>
+  ) : (
+    "-"
+  )}
+</TableCell>
+
                   <TableCell>
                     {(customer.city || customer.state) && (
                       <div className="flex items-center gap-1 text-sm">
@@ -474,14 +485,7 @@ cin_number: data.cin_number,
         fields={detailFields}
         onEdit={handleDetailEdit}
         onDelete={handleDetailDelete}
-        actions={
-          selectedCustomer && (
-            <Button onClick={() => handleCreateDeal(selectedCustomer.id)}>
-              <Briefcase className="h-4 w-4 mr-2" />
-              Create Deal
-            </Button>
-          )
-        }
+        
       />
     </div>
   );

@@ -5,7 +5,13 @@ import { TrendingUp, DollarSign, Users, Target, Award, Activity } from "lucide-r
 interface AnalyticsData {
   leadsBySource: { name: string; value: number }[];
   dealsByStage: { name: string; value: number }[];
-  monthlyRevenue: { month: string; revenue: number; deals: number }[];
+  monthlyRevenue: {
+  monthKey: string;   // YYYY-MM (internal, unique)
+  month: string;      // display label (Jul 25)
+  revenue: number;
+  deals: number;
+}[];
+
   conversionRate: number;
   avgDealValue: number;
   activeCustomers: number;
@@ -96,7 +102,24 @@ export const AdvancedAnalytics = ({ data }: AdvancedAnalyticsProps) => {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" />
+                <XAxis
+  dataKey="monthKey"
+  type="category"
+  allowDuplicatedCategory={false}
+  interval={0}
+  minTickGap={0}
+  tickFormatter={(value) => {
+    const [year, month] = value.split("-");
+    const d = new Date(Number(year), Number(month) - 1);
+    return d.toLocaleString("default", {
+      month: "short",
+      year: "2-digit",
+    });
+  }}
+/>
+
+
+
                 <YAxis stroke="hsl(var(--muted-foreground))" />
                 <Tooltip 
                   contentStyle={{ 
@@ -203,7 +226,25 @@ export const AdvancedAnalytics = ({ data }: AdvancedAnalyticsProps) => {
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={data.monthlyRevenue}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" />
+                <XAxis
+  dataKey="monthKey"
+  type="category"
+  allowDuplicatedCategory={false}
+  interval={0}
+  minTickGap={0}
+  tickFormatter={(value) => {
+    const [year, month] = value.split("-");
+    const d = new Date(Number(year), Number(month) - 1);
+    return d.toLocaleString("default", {
+      month: "short",
+      year: "2-digit",
+    });
+  }}
+/>
+
+
+
+
                 <YAxis stroke="hsl(var(--muted-foreground))" />
                 <Tooltip 
                   contentStyle={{ 

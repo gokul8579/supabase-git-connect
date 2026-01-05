@@ -377,7 +377,7 @@ const fetchExisting = async (vals: string[], field: string): Promise<any[]> => {
         <Button onClick={() => setOpen(true)}>Import CSV / XLSX</Button>
       </DialogTrigger>
 
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Import Contacts (Customers / Leads)</DialogTitle>
         </DialogHeader>
@@ -477,28 +477,39 @@ const fetchExisting = async (vals: string[], field: string): Promise<any[]> => {
           </div>
 
           {duplicatesPreview.length > 0 && (
-            <div>
-              <Label>Existing matches found (sample)</Label>
-              <ScrollArea className="max-h-40 border rounded p-2 text-xs">
-                <table className="w-full">
-                  <thead>
-                    <tr>
-                      <th>id</th><th>name</th><th>email</th><th>phone</th><th>notes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {duplicatesPreview.map((d:any)=>(<tr key={d.id}>
-                      <td>{d.id}</td>
-                      <td>{d.name}</td>
-                      <td>{d.email}</td>
-                      <td>{d.phone}</td>
-                      <td>{String(d.notes || "").slice(0,60)}</td>
-                    </tr>))}
-                  </tbody>
-                </table>
-              </ScrollArea>
-            </div>
-          )}
+  <div>
+    <Label>Existing matches found (sample)</Label>
+
+    {/* FIX: Added scroll + min-width so table never goes out of screen */}
+    <ScrollArea className="max-h-64 border rounded p-2 text-xs overflow-y-auto">
+      <div className="min-w-[700px]">
+        <table className="w-full">
+          <thead>
+            <tr>
+              <th>id</th>
+              <th>name</th>
+              <th>email</th>
+              <th>phone</th>
+              <th>notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {duplicatesPreview.map((d: any) => (
+              <tr key={d.id}>
+                <td>{d.id}</td>
+                <td>{d.name}</td>
+                <td>{d.email}</td>
+                <td>{d.phone}</td>
+                <td>{String(d.notes || "").slice(0, 60)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </ScrollArea>
+  </div>
+)}
+
 
           <div className="flex gap-2 justify-end">
             <Button variant="outline" onClick={() => { setOpen(false); setHeaders([]); setRawRows([]); setFileName(null); }}>

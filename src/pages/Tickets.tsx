@@ -15,6 +15,7 @@ import { SearchFilter } from "@/components/SearchFilter";
 import { AdvancedFilters } from "@/components/AdvancedFilters";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 interface Ticket {
   id: string;
@@ -29,6 +30,7 @@ interface Ticket {
   resolved_at: string | null;
   created_at: string;
   updated_at: string;
+   sales_order_number?: string | null;   // ✅ ADD THIS
   customer?: {
     name: string;
     email: string;
@@ -105,23 +107,24 @@ const Tickets = () => {
   };
 
   const fetchDeliveredOrders = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
 
-      const { data, error } = await supabase
-        .from("sales_orders")
-        .select("id, order_number, customer_id, customer:customers(name)")
-        .eq("user_id", user.id)
-        .eq("status", "delivered")
-        .order("created_at", { ascending: false });
+    const { data, error } = await supabase
+      .from("sales_orders")
+      .select("id, order_number")
+      .eq("user_id", user.id)
+      .eq("status", "delivered")
+      .order("created_at", { ascending: false });
 
-      if (error) throw error;
-      setDeliveredOrders(data || []);
-    } catch (error) {
-      console.error("Error fetching delivered orders", error);
-    }
-  };
+    if (error) throw error;
+    setDeliveredOrders(data || []);
+  } catch (error) {
+    console.error("Error fetching delivered orders", error);
+  }
+};
+
 
   const fetchTickets = async () => {
     try {
@@ -130,20 +133,22 @@ const Tickets = () => {
       if (!user) return;
 
       const { data, error } = await supabase
-        .from("tickets")
-        .select(`
-          *,
-          customer:customers(id, name, email)
-        `)
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
+  .from("tickets")
+  .select(`
+    *,
+    customer:customers(id, name, email),
+    sales_order:sales_orders(id, order_number)
+  `)
+  .eq("user_id", user.id)
+  .order("created_at", { ascending: false });
 
       if (error) throw error;
 
-      const ticketsWithCustomer = (data || []).map((ticket: any) => ({
-        ...ticket,
-        customer: ticket.customer || null,
-      }));
+      const ticketsWithCustomer = (data || []).map((t: any) => ({
+  ...t,
+  customer: t.customer || null,
+  sales_order_number: t.sales_order?.order_number || null,
+}));
 
       setTickets(ticketsWithCustomer);
     } catch (error: any) {
@@ -202,7 +207,7 @@ const Tickets = () => {
       const { data: ticket, error } = await supabase
         .from("tickets")
         .insert({
-          customer_id: selectedOrder.customer_id || formData.customer_id || null,
+          customer_id: null,
           sales_order_id: formData.sales_order_id,
           subject: formData.subject,
           description: formData.description,
@@ -351,13 +356,25 @@ const Tickets = () => {
     }
   };
 
+  // ---------- NOTE: Format created_at for notes (local time) ----------
+const formatNoteTime = (ts: string | null | undefined) => {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}-${mm}-${yyyy} ${hh}:${min}`;
+};
+
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
       open: "bg-blue-100 text-blue-800",
       in_progress: "bg-yellow-100 text-yellow-800",
       waiting_for_customer: "bg-orange-100 text-orange-800",
       resolved: "bg-green-100 text-green-800",
-      closed: "bg-gray-100 text-gray-800",
+      closed: "bg-red-100 text-red-800",
     };
     return colors[status] || "bg-gray-100 text-gray-800";
   };
@@ -476,7 +493,8 @@ const Tickets = () => {
             <TableRow>
               <TableHead className="text-xs md:text-sm">Ticket #</TableHead>
               <TableHead className="text-xs md:text-sm">Subject</TableHead>
-              <TableHead className="text-xs md:text-sm">Customer</TableHead>
+              
+              <TableHead className="text-xs md:text-sm">SO Number</TableHead>
               <TableHead className="text-xs md:text-sm">Priority</TableHead>
               <TableHead className="text-xs md:text-sm">Status</TableHead>
               <TableHead className="text-xs md:text-sm hidden md:table-cell">Deadline</TableHead>
@@ -486,7 +504,7 @@ const Tickets = () => {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center">Loading...</TableCell>
+                <TableCell colSpan={7} className="text-center"><EduvancaLoader size={32} /></TableCell>
               </TableRow>
             ) : filteredTickets.length === 0 ? (
               <TableRow>
@@ -509,9 +527,10 @@ const Tickets = () => {
                       </span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-xs md:text-sm hidden md:table-cell">
-                    {ticket.customer?.name || "-"}
-                  </TableCell>
+                  
+                  <TableCell className="text-xs md:text-sm">
+  {ticket.sales_order_number || "-"}
+</TableCell>
                   <TableCell className="text-xs md:text-sm">
                     <Badge className={getPriorityColor(ticket.priority)}>
                       {ticket.priority}
@@ -519,9 +538,10 @@ const Tickets = () => {
                   </TableCell>
                   <TableCell className="text-xs md:text-sm">
                     <Select
-                      value={ticket.status}
-                      onValueChange={(value) => handleStatusChange(ticket.id, value)}
-                    >
+  value={ticket.status}
+  disabled={ticket.status === "resolved"}
+  onValueChange={(value) => handleStatusChange(ticket.id, value)}
+>
                       <SelectTrigger className={`h-7 md:h-8 text-xs md:text-sm ${getStatusColor(ticket.status)}`}>
                         <SelectValue />
                       </SelectTrigger>
@@ -584,7 +604,7 @@ const Tickets = () => {
                   setFormData({ 
                     ...formData, 
                     sales_order_id: v === "none" ? "" : v,
-                    customer_id: order?.customer_id || ""
+                    customer_id: ""
                   });
                 }}
                 required
@@ -598,8 +618,8 @@ const Tickets = () => {
                   ) : (
                     deliveredOrders.map((order) => (
                       <SelectItem key={order.id} value={order.id}>
-                        {order.order_number} - {order.customer?.name || "No Customer"}
-                      </SelectItem>
+  {order.order_number}
+</SelectItem>
                     ))
                   )}
                 </SelectContent>
@@ -683,11 +703,10 @@ const Tickets = () => {
                 <DialogTitle>{selectedTicket.ticket_number} - {selectedTicket.subject}</DialogTitle>
               </DialogHeader>
               <Tabs defaultValue="details" className="w-full">
-                <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="details">Details</TabsTrigger>
-                  <TabsTrigger value="notes">Notes & Replies</TabsTrigger>
-                  <TabsTrigger value="history">History</TabsTrigger>
-                </TabsList>
+                <TabsList className="grid w-full grid-cols-2 rounded-md border bg-muted">
+  <TabsTrigger value="details">Details</TabsTrigger>
+  <TabsTrigger value="notes">Notes & Replies</TabsTrigger>
+</TabsList>
                 <TabsContent value="details" className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -706,6 +725,11 @@ const Tickets = () => {
                         </Badge>
                       </div>
                     </div>
+                    <div>
+  <Label className="text-muted-foreground">Sales Order</Label>
+  <div className="mt-1 font-medium">{selectedTicket.sales_order_number || "-"}</div>
+</div>
+
                     <div>
                       <Label className="text-muted-foreground">Customer</Label>
                       <div className="mt-1">{selectedTicket.customer?.name || "-"}</div>
@@ -758,27 +782,13 @@ const Tickets = () => {
                         </Button>
                       </div>
                     </div>
-                    <div>
-                      <Label>Send Reply to Customer</Label>
-                      <div className="flex gap-2 mt-2">
-                        <Textarea
-                          value={newReply}
-                          onChange={(e) => setNewReply(e.target.value)}
-                          placeholder="Type your reply to the customer..."
-                          rows={3}
-                          className="flex-1"
-                        />
-                        <Button onClick={handleAddReply} disabled={!newReply.trim()}>
-                          <Send className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
+                    
                     <ScrollArea className="h-[300px] border rounded-md p-4">
                       <div className="space-y-4">
                         {notes.map((note) => (
                           <div key={note.id} className="border-l-2 border-blue-500 pl-3">
                             <div className="text-xs text-muted-foreground">
-                              {formatLocalDateTime(note.created_at)} - {note.is_internal ? "Internal Note" : "Public"}
+                              {formatNoteTime(note.created_at)} - {note.is_internal ? "Internal Note" : "Public"}
                             </div>
                             <div className="mt-1">{note.note}</div>
                           </div>
@@ -800,11 +810,7 @@ const Tickets = () => {
                     </ScrollArea>
                   </div>
                 </TabsContent>
-                <TabsContent value="history">
-                  <div className="text-center text-muted-foreground py-8">
-                    History will be displayed here
-                  </div>
-                </TabsContent>
+                
               </Tabs>
             </>
           )}

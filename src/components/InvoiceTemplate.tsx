@@ -14,8 +14,10 @@ import { calculateLineItemAmounts } from "@/lib/gstCalculator";
 type BillingType = "inclusive_gst" | "exclusive_gst";
 
 const normalizeBillingType = (value: string | null | undefined): BillingType => {
-  if (value === "exclusive_gst") return "exclusive_gst";
-  return "inclusive_gst";
+  if (!value) return "exclusive_gst"; // default = exclusive
+if (value.toLowerCase().includes("ex")) return "exclusive_gst";
+return "inclusive_gst";
+
 };
 
 
@@ -24,11 +26,14 @@ interface InvoiceItem {
   description: string;
   quantity: number;
   unit_price: number;
-  taxable_value?: number; 
+ taxable_value?: number;   // DB
+taxableValue?: number;    // calculator returns camelCase
+
   amount: number;
   cgst_amount?: number;
   sgst_amount?: number;
   product_id?: string | null;
+  product_gst_percent?: number; // <-- ADD THIS
     // ADD THESE ↓↓↓
   cgst_percent?: number;
   sgst_percent?: number;
@@ -186,10 +191,66 @@ const showSplit = editData.show_gst_split !== false;
 
 
 const processedItems = editData.items.map(item => {
-  const totalRate =
-  (item.cgst_percent || 0) + (item.sgst_percent || 0);
+
+  // 🚫 If no product_id → treat as service/misc item → GST = 0
+// 🚫 If no product_id → GST always zero, BUT KEEP item intact
+// SERVICE ITEM → no GST, but DO NOT break GST for other items
+// SERVICE / MISC ITEM (NO PRODUCT ID) → APPLY SAME GST RATE
 
 
+
+// Product GST priority (robust + numeric):
+// 1) Item-level GST (if provided)
+// 2) Sales-order level GST (editData.cgst_percent / sgst_percent)
+// 3) 0 fallback
+// 1️⃣ LOAD ITEM SAVED GST (if exists)
+let cgst = Number(item.cgst_percent ?? 0);
+let sgst = Number(item.sgst_percent ?? 0);
+
+// If product GST exists, override everything
+// 1) If product has GST → ALWAYS use it
+if (item.product_id && item.product_gst_percent !== undefined && item.product_gst_percent !== null) {
+  cgst = Number(item.product_gst_percent) / 2;
+  sgst = Number(item.product_gst_percent) / 2;
+} 
+// 2) Else fallback to item-level saved GST
+else if (item.product_id && cgst === 0 && sgst === 0 && (editData.cgst_percent || editData.sgst_percent)) {
+  cgst = Number(editData.cgst_percent || 0);
+  sgst = Number(editData.sgst_percent || 0);
+}
+
+
+
+
+// 3️⃣ Final GST rate
+const totalRate = (cgst + sgst); // must be 10, not 8.33
+
+
+
+
+  // 🟢 SERVICE ITEM BLOCK (PASTE HERE)
+// SERVICE / MISC ITEM → ALWAYS NO GST
+if (!item.product_id) {
+  const gst = calculateLineItemAmounts(
+    item.unit_price,
+    item.quantity,
+    0,              // ← GST RATE = 0 ALWAYS for services
+    billingType
+  );
+
+  return {
+    ...item,
+    taxable_value: gst.taxableValue,
+    cgst_percent: 0,
+    sgst_percent: 0,
+    cgst_amount: 0,
+    sgst_amount: 0,
+    amount: gst.totalAmount,
+  };
+}
+
+
+  // Recalculate GST but DO NOT touch unit_price
   const gst = calculateLineItemAmounts(
     Number(item.unit_price),
     Number(item.quantity),
@@ -199,12 +260,20 @@ const processedItems = editData.items.map(item => {
 
   return {
     ...item,
+    cgst_percent: cgst,
+    sgst_percent: sgst,
+
     taxable_value: gst.taxableValue,
-    cgst_amount: gst.cgstAmount,
-    sgst_amount: gst.sgstAmount,
+    cgst_amount: cgst === 0 ? 0 : gst.cgstAmount,
+    sgst_amount: sgst === 0 ? 0 : gst.sgstAmount,
+
+    // Keep total correct without modifying price
     amount: gst.totalAmount,
   };
 });
+
+
+
 
 
 
@@ -226,7 +295,12 @@ if (billingType === "inclusive_gst") {
   subtotal = processedItems.reduce((s, i) => s + (i.unit_price * i.quantity), 0);
 } else {
   // Exclusive GST → taxable value becomes subtotal
-  subtotal = processedItems.reduce((s, i) => s + i.taxable_value, 0);
+ // subtotal = processedItems.reduce((s, i) => s + i.taxable_value, 0);
+ subtotal = processedItems.reduce(
+  (s, i) => s + (i.taxable_value ?? i.taxableValue ?? 0),
+  0
+);
+
 }
 
 const totalCgst = processedItems.reduce((s, i) => s + i.cgst_amount, 0);
@@ -261,18 +335,19 @@ if (billingType === "inclusive_gst") {
                   defaultValue={document.body.dataset.invoiceTemplate || "t1"}
                 >
                   <option value="t1">Classic</option>
-                  <option value="t2">Minimal</option>
-                  <option value="t3">Modern</option>
-                  <option value="t4">Compact</option>
-                  <option value="t5">Elegant</option>
+            
                 </select>
               </div>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsEditing(!isEditing)}
-            >
+            {/*<Button
+  variant="outline"
+  size="sm"
+  disabled={invoiceData?.status === "delivered"}
+  onClick={() => {
+    if (invoiceData?.status === "delivered") return;
+    setIsEditing(!isEditing);
+  }}
+>
               {isEditing ? (
                 <>
                   <X className="h-4 w-4 mr-2" />
@@ -284,7 +359,7 @@ if (billingType === "inclusive_gst") {
                   Edit
                 </>
               )}
-            </Button>
+            </Button> */}
             <Button size="sm" onClick={handlePrint}>
               <Download className="h-4 w-4 mr-2" />
               Download PDF
@@ -523,36 +598,59 @@ if (billingType === "inclusive_gst") {
 </td>
 
                     <td className="border p-2 text-right">
-  {billingType === "inclusive_gst" && !showSplit ? (
-  "-"
-) : (
-  <>
-    {formatIndianCurrency(item.cgst_amount || 0)}
-    {item.taxable_value > 0 && (
-      <span className="text-xs text-muted-foreground">
-        ({((item.cgst_amount / item.taxable_value) * 100).toFixed(2)}%)
-      </span>
-    )}
-  </>
-)}
-
+  {billingType === "inclusive_gst" ? (
+    <>
+      {formatIndianCurrency(item.cgst_amount || 0)}
+      {item.cgst_percent > 0 && (
+        <span className="text-xs text-muted-foreground">
+          ({item.cgst_percent.toFixed(2)}%)
+        </span>
+      )}
+      <div className="text-[11px] text-muted-foreground italic">
+        tax inclusive
+      </div>
+    </>
+  ) : (
+    <>
+      {formatIndianCurrency(item.cgst_amount || 0)}
+      {item.cgst_amount > 0 && (
+        <span className="text-xs text-muted-foreground">
+          ({item.cgst_percent?.toFixed(2)}%)
+        </span>
+      )}
+    </>
+  )}
 </td>
+
+
 
                     <td className="border p-2 text-right">
-  {billingType === "inclusive_gst" && !showSplit ? (
-  "-"
-) : (
-  <>
-    {formatIndianCurrency(item.sgst_amount || 0)}
-    {item.taxable_value > 0 && (
-      <span className="text-xs text-muted-foreground">
-        ({((item.sgst_amount / item.taxable_value) * 100).toFixed(2)}%)
-      </span>
-    )}
-  </>
-)}
-
+  {billingType === "inclusive_gst" ? (
+    <>
+      {formatIndianCurrency(item.sgst_amount || 0)}
+      {item.sgst_percent > 0 && (
+        <span className="text-xs text-muted-foreground">
+          ({item.sgst_percent.toFixed(2)}%)
+        </span>
+      )}
+      <div className="text-[11px] text-muted-foreground italic">
+        tax inclusive
+      </div>
+    </>
+  ) : (
+    <>
+      {formatIndianCurrency(item.sgst_amount || 0)}
+      {item.sgst_amount > 0 && (
+        <span className="text-xs text-muted-foreground">
+          ({item.sgst_percent?.toFixed(2)}%)
+        </span>
+      )}
+    </>
+  )}
 </td>
+
+
+
 
                     <td
                       className="border p-2 text-right font-bold"
@@ -756,33 +854,29 @@ customer_cin_number: editData.customer_cin_number,
                     .eq("sales_order_id", (editData as any).sales_order_id);
 
                   // Insert updated items
-                  const itemsToInsert = processedItems.map((item) => {
-                    const totalRate = (editData.cgst_percent || 0) + (editData.sgst_percent || 0);
-const billingType = normalizeBillingType(editData.billing_type);
-
-const gst = calculateLineItemAmounts(
-  item.unit_price,
-  item.quantity,
-  totalRate,
-  billingType
-);
-
-const itemData: any = {
+                 // Insert updated items
+const itemsToInsert = processedItems.map((item) => ({
   sales_order_id: (editData as any).sales_order_id,
   description: item.description,
   quantity: item.quantity,
   unit_price: item.unit_price,
-  taxable_value: gst.taxableValue,
-  cgst_amount: gst.cgstAmount,
-  sgst_amount: gst.sgstAmount,
-  amount: gst.totalAmount,
-};
-                    // Only include product_id if it exists
-                    if ((item as any).product_id) {
-                      itemData.product_id = (item as any).product_id;
-                    }
-                    return itemData;
-                  });
+
+  taxable_value: item.taxable_value,
+  cgst_amount: item.cgst_amount,
+  sgst_amount: item.sgst_amount,
+  amount: item.amount,
+
+  cgst_percent: item.cgst_percent,
+sgst_percent: item.sgst_percent,
+
+
+  // ✅ ALWAYS send product_id (fallback for services)
+  product_id: item.product_id || null
+
+}));
+
+
+
 
                   const { error: itemsError } = await supabase
                     .from("sales_order_items")

@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { FileText, Plus, Eye, ExternalLink } from "lucide-react";
+import { FileText, Plus, Eye, ExternalLink, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { InvoiceTemplate } from "@/components/InvoiceTemplate";
 import { formatLocalDate } from "@/lib/dateUtils";
@@ -19,7 +19,8 @@ import { SearchFilter } from "@/components/SearchFilter";
 import { Switch } from "@/components/ui/switch";
 import { calculateLineItemAmounts } from "@/lib/gstCalculator";
 import { AdvancedFilters } from "@/components/AdvancedFilters";
-
+import { EduvancaLoader } from "@/components/EduvancaLoader";
+import { QuotationProductSelector2 } from "@/components/QuotationProductSelector2";
 
 
 // ----------------------
@@ -90,6 +91,9 @@ const Quotations = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [customerFilter, setCustomerFilter] = useState<string | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+const [quotationToDelete, setQuotationToDelete] = useState<Quotation | null>(null);
+
   const [formData, setFormData] = useState({
     quotation_number: "",
     customer_id: "",
@@ -102,8 +106,11 @@ const Quotations = () => {
     notes: "",
   });
   const [lineItems, setLineItems] = useState([
-    { type: "new", product_id: "", description: "", quantity: 1, unit_price: 0, cgst_percent: 9, sgst_percent: 9 }
-  ]);
+  { type: "service", product_id: "", description: "", quantity: 1, unit_price: 0, cgst_percent: 9, sgst_percent: 9 }
+]);
+
+
+
   const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
@@ -138,6 +145,51 @@ const Quotations = () => {
       console.error("Error fetching customers:", error);
     }
   };
+
+  const confirmDeleteQuotation = (quotation: Quotation) => {
+  setQuotationToDelete(quotation);
+  setDeleteConfirmOpen(true);
+};
+
+const handleDeleteQuotation = async () => {
+  if (!quotationToDelete) return;
+
+  try {
+    // 1️⃣ Check if accepted — block deletion
+    if (quotationToDelete.status === "accepted") {
+      toast.error("Accepted quotations cannot be deleted");
+      return;
+    }
+
+    // 2️⃣ Delete quotation items first
+    const { error: itemsError } = await supabase
+      .from("quotation_items")
+      .delete()
+      .eq("quotation_id", quotationToDelete.id);
+
+    if (itemsError) throw itemsError;
+
+    // 3️⃣ Delete the quotation
+    const { error: quotationError } = await supabase
+      .from("quotations")
+      .delete()
+      .eq("id", quotationToDelete.id);
+
+    if (quotationError) throw quotationError;
+
+    toast.success("Quotation deleted successfully");
+
+    setDeleteConfirmOpen(false);
+    fetchQuotations();
+    
+  } catch (err: any) {
+    toast.error(err.message || "Failed to delete quotation");
+  }
+};
+
+
+
+
 
   const fetchDeals = async () => {
     try {
@@ -265,15 +317,21 @@ const Quotations = () => {
       totalAmount += gst.totalAmount;
 
       return {
-        description: item.description,
-        product_id: item.product_id || null,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        taxable_value: gst.taxableValue,
-        cgst_amount: gst.cgstAmount,
-        sgst_amount: gst.sgstAmount,
-        amount: gst.totalAmount,
-      };
+  description: item.description,
+  product_id: item.product_id || null,
+  quantity: item.quantity,
+  unit_price: item.unit_price,
+
+  taxable_value: gst.taxableValue,
+  cgst_amount: gst.cgstAmount,
+  sgst_amount: gst.sgstAmount,
+  amount: gst.totalAmount,
+
+  // SAVE the GST PERCENTS correctly
+  cgst_percent: item.cgst_percent,
+  sgst_percent: item.sgst_percent,
+};
+
     });
 
     const taxAmount = totalCgst + totalSgst;
@@ -338,8 +396,9 @@ customer_cin_number: selectedCustomer?.cin_number || null,
     });
 
     setLineItems([
-      { type: "new", product_id: "", description: "", quantity: 1, unit_price: 0, cgst_percent: 9, sgst_percent: 9 }
-    ]);
+  { type: "service", product_id: "", description: "", quantity: 1, unit_price: 0, cgst_percent: 9, sgst_percent: 9 }
+]);
+
 
     fetchQuotations();
 
@@ -384,14 +443,23 @@ customer_cin_number: customerData?.cin_number || "",
         customer_state: customerData?.state,
         customer_postal_code: customerData?.postal_code,
         items: items?.map(item => ({
-          description: item.description,
-          quantity: Number(item.quantity),
-          unit_price: Number(item.unit_price),
-          cgst_amount: Number(item.cgst_amount || 0),
-          sgst_amount: Number(item.sgst_amount || 0),
-          amount: Number(item.amount),
-          product_id: (item as any).product_id || null,
-        })) || [],
+  description: item.description,
+  quantity: Number(item.quantity),
+  unit_price: Number(item.unit_price),
+
+  taxable_value: Number(item.taxable_value || 0),
+
+  cgst_amount: Number(item.cgst_amount || 0),
+  sgst_amount: Number(item.sgst_amount || 0),
+  amount: Number(item.amount),
+
+  // MOST IMPORTANT FIXES
+  cgst_percent: Number(item.cgst_percent ?? 0),
+  sgst_percent: Number(item.sgst_percent ?? 0),
+
+  product_id: (item as any).product_id || null,
+})) || [],
+
         //subtotal: Number(quotation.total_amount) - Number(quotation.tax_amount) + Number(quotation.discount_amount),
         subtotal: Number(quotation.subtotal || 0),
         tax_amount: Number(quotation.tax_amount),
@@ -443,112 +511,12 @@ show_gst_split: quotation.show_gst_split,
         related_to_id: quotationId,
       } as any);
 
-      // If status changed to "accepted", create a sales order
       if (newStatus === "accepted" && oldStatus !== "accepted") {
-        // Check if sales order already exists for this quotation
-        const { data: existingOrder } = await supabase
-          .from("sales_orders")
-          .select("id")
-          .eq("quotation_id", quotationId)
-          .single();
+  toast.success("Great! Quotation accepted. Create a Sales Order for this quotation anytime.");
+} else {
+  toast.success("Status updated successfully!");
+}
 
-        if (!existingOrder) {
-          // Fetch quotation details
-          const { data: quotation, error: quoteError } = await supabase
-            .from("quotations")
-            .select("*")
-            .eq("id", quotationId)
-            .single<Quotation>();
-
-          if (quoteError) throw quoteError;
-
-          // Fetch quotation items
-          const { data: quotationItems, error: itemsError } = await supabase
-            .from("quotation_items")
-            .select("*")
-            .eq("quotation_id", quotationId);
-
-          if (itemsError) throw itemsError;
-
-          // Generate order number
-          const orderNumber = `SO-${Date.now()}`;
-
-          // Calculate subtotal
-          const subtotal = quotationItems?.reduce((sum, item) => 
-            sum + (Number(item.quantity) * Number(item.unit_price)), 0) || 0;
-
-          // Create sales order
-          const { data: salesOrder, error: orderError } = await supabase
-            .from("sales_orders")
-            .insert({
-              order_number: orderNumber,
-              quotation_id: quotationId,
-              customer_id: quotation.customer_id,
-              deal_id: quotation.deal_id,
-              order_date: new Date().toISOString().slice(0, 10),
-              expected_delivery_date: quotation.valid_until || null,
-              status: "draft",
-              subtotal: subtotal,
-              discount_amount: quotation.discount_amount || 0,
-              tax_amount: quotation.tax_amount || 0,
-              cgst_percent: quotation.cgst_percent || 9,
-              sgst_percent: quotation.sgst_percent || 9,
-              total_amount: quotation.total_amount || 0,
-              notes: quotation.notes || `Created from quotation ${quotation.quotation_number}`,
-              user_id: user.id,
-              billing_type: quotation.billing_type,
-              show_gst_split: quotation.show_gst_split,
-
-            } as any)
-            .select()
-            .single();
-
-          if (orderError) throw orderError;
-
-          // Create sales order items from quotation items
-          if (quotationItems && quotationItems.length > 0 && salesOrder) {
-            const orderItems = quotationItems.map((item) => {
-              const itemSubtotal = Number(item.quantity) * Number(item.unit_price);
-              const itemData: any = {
-                sales_order_id: salesOrder.id,
-                description: item.description,
-                quantity: item.quantity,
-                unit_price: item.unit_price,
-                amount: item.amount,
-                cgst_amount: item.cgst_amount || 0,
-                sgst_amount: item.sgst_amount || 0,
-              };
-              // Only include product_id if it exists (after migration makes it nullable)
-              if ((item as any).product_id) {
-                itemData.product_id = (item as any).product_id;
-              }
-              return itemData;
-            });
-
-            const { error: orderItemsError } = await supabase
-              .from("sales_order_items")
-              .insert(orderItems);
-
-            if (orderItemsError) throw orderItemsError;
-          }
-
-          // Log activity for sales order creation
-          await supabase.from("activities").insert({
-            user_id: user.id,
-            activity_type: "sales_order_created",
-            subject: `Sales order ${orderNumber} created from quotation`,
-            description: `Sales order ${orderNumber} was automatically created from quotation ${quotation.quotation_number}`,
-            related_to_type: "sales_order",
-            related_to_id: salesOrder.id,
-          } as any);
-
-          toast.success("Quotation accepted! Sales order created successfully.");
-        } else {
-          toast.success("Status updated successfully! (Sales order already exists for this quotation)");
-        }
-      } else {
-        toast.success("Status updated successfully!");
-      }
 
       fetchQuotations();
     } catch (error: any) {
@@ -662,7 +630,7 @@ show_gst_split: quotation.show_gst_split,
                 </div>
               </div>
               
-              <QuotationProductSelector items={lineItems} onChange={setLineItems} />
+              <QuotationProductSelector2 items={lineItems} onChange={setLineItems} />
 
               <div className="space-y-2">
                 <Label htmlFor="notes">Notes</Label>
@@ -738,7 +706,7 @@ show_gst_split: quotation.show_gst_split,
             {loading ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center">
-                  Loading...
+                  <EduvancaLoader size={32} />
                 </TableCell>
               </TableRow>
             ) : filteredQuotations.length === 0 ? (
@@ -781,25 +749,43 @@ show_gst_split: quotation.show_gst_split,
                   <TableCell className="text-xs md:text-sm hidden md:table-cell">{quotation.valid_until ? formatLocalDate(quotation.valid_until) : "-"}</TableCell>
                   <TableCell className="text-xs md:text-sm hidden lg:table-cell">{formatLocalDate(quotation.created_at)}</TableCell>
                   <TableCell className="text-xs md:text-sm">
-                    <div className="flex flex-col sm:flex-row gap-1 sm:gap-2 items-start sm:items-center">
-                      {quotation.status === "accepted" && quotation.related_sales_order_number && (
-                        <Link to="/dashboard/sales-orders" className="mb-1 sm:mb-0">
-                          <Badge variant="outline" className="text-[10px] md:text-xs">
-                            <ExternalLink className="h-2.5 w-2.5 md:h-3 md:w-3 mr-1" />
-                            SO: {quotation.related_sales_order_number}
-                          </Badge>
-                        </Link>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleViewInvoice(quotation)}
-                        className="h-7 w-7 md:h-8 md:w-8 p-0"
-                      >
-                        <Eye className="h-3.5 w-3.5 md:h-4 md:w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
+  <div className="flex flex-row items-center gap-2">
+
+    {/* VIEW BUTTON (always visible) */}
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => handleViewInvoice(quotation)}
+      className="h-7 w-7 md:h-8 md:w-8 p-0"
+    >
+      <Eye className="h-3.5 w-3.5 md:h-4 md:w-4" />
+    </Button>
+
+    {/* DELETE BUTTON (only if NOT accepted) */}
+    {quotation.status !== "accepted" && (
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => confirmDeleteQuotation(quotation)}
+        className="h-7 w-7 md:h-8 md:w-8 p-0 text-red-600 hover:text-red-800"
+      >
+        <Trash2 className="h-3.5 w-3.5 md:h-4 md:w-4" />
+      </Button>
+    )}
+
+    {/* BADGE (only for accepted quotations with SO link) */}
+    {quotation.status === "accepted" && quotation.related_sales_order_number && (
+      <Link to="/dashboard/sales-orders">
+        <Badge variant="outline" className="text-[10px] md:text-xs flex items-center gap-1">
+          <ExternalLink className="h-3 w-3" />
+          SO: {quotation.related_sales_order_number}
+        </Badge>
+      </Link>
+    )}
+
+  </div>
+</TableCell>
+
                 </TableRow>
               ))
             )}
@@ -816,6 +802,30 @@ show_gst_split: quotation.show_gst_split,
           await fetchQuotations();
         }}
       />
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+  <DialogContent className="max-w-md">
+    <DialogHeader>
+      <DialogTitle>Delete Quotation</DialogTitle>
+    </DialogHeader>
+
+    <p className="text-sm text-muted-foreground">
+      Are you sure you want to delete quotation{" "}
+      <strong>{quotationToDelete?.quotation_number}</strong>?  
+      <br />
+      This action cannot be undone.
+    </p>
+
+    <div className="flex justify-end gap-2 mt-4">
+      <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)}>
+        Cancel
+      </Button>
+      <Button variant="destructive" onClick={handleDeleteQuotation}>
+        Delete
+      </Button>
+    </div>
+  </DialogContent>
+</Dialog>
+
     </div>
   );
 };

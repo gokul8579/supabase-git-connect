@@ -12,7 +12,11 @@ interface Task {
   due_date: string | null;
 }
 
-export const PendingTasks = () => {
+interface PendingTasksProps {
+  limit?: number;
+}
+
+export const PendingTasks = ({ limit = 5 }: PendingTasksProps) => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -35,15 +39,21 @@ export const PendingTasks = () => {
       if (error) throw error;
       
       // Sort: high priority first, then by nearest due date
-      const sorted = (data || []).sort((a, b) => {
-        const priorityOrder: Record<string, number> = { high: 3, medium: 2, low: 1 };
-        const priorityDiff = (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
-        if (priorityDiff !== 0) return priorityDiff;
-        
-        if (!a.due_date) return 1;
-        if (!b.due_date) return -1;
-        return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
-      });
+      const sorted = (data || [])
+  .sort((a, b) => {
+    const priorityOrder = { high: 1, medium: 2, low: 3 };
+    const pa = priorityOrder[a.priority] || 99;
+    const pb = priorityOrder[b.priority] || 99;
+
+    if (pa !== pb) return pa - pb;
+
+    return new Date(a.due_date || "").getTime() - new Date(b.due_date || "").getTime();
+  })
+  .slice(0, limit);
+  
+setTasks(sorted);
+
+
       
       setTasks(sorted.slice(0, 5));
     } catch (error) {

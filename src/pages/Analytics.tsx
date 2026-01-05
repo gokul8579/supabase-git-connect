@@ -5,6 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, Package, Wallet, Building2 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 interface Stats {
   totalSales: number;
@@ -222,7 +223,7 @@ const Analytics = () => {
 
       {loading ? (
         <div className="flex items-center justify-center h-64">
-          <div className="text-lg">Loading analytics...</div>
+          <div className="text-lg"><EduvancaLoader size={32}/></div>
         </div>
       ) : !stats ? (
         <Card>

@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Plus, Calendar } from "lucide-react";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
+import { formatTime12h } from "@/lib/timeUtils";
 
 interface AttendanceRecord {
   id: string;
@@ -40,6 +42,12 @@ const Attendance = () => {
   const [editOpen, setEditOpen] = useState(false);
 const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null);
 const [editCheckOut, setEditCheckOut] = useState("");
+const [editHalfDay, setEditHalfDay] = useState(false);
+const [submitLoading, setSubmitLoading] = useState(false);
+const [isHoliday, setIsHoliday] = useState(false);
+const [todayIsHoliday, setTodayIsHoliday] = useState(false);
+
+
 
   const [formData, setFormData] = useState({
     employee_id: "",
@@ -51,10 +59,44 @@ const [editCheckOut, setEditCheckOut] = useState("");
   });
 
   useEffect(() => {
-    fetchAttendance();
-    fetchEmployees();
-    fetchDepartments();
-  }, [selectedDate, departmentFilter]);
+  fetchAttendance();
+  fetchEmployees();
+  fetchDepartments();
+  checkHoliday(selectedDate);
+}, [selectedDate, departmentFilter]);
+
+
+  useEffect(() => {
+  setFormData(prev => ({
+    ...prev,
+    date: selectedDate,
+    employee_id: "", // reset employee when date changes
+  }));
+}, [selectedDate]);
+
+useEffect(() => {
+  checkTodayHoliday();
+}, []);
+
+const checkTodayHoliday = async () => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const today = new Date().toISOString().split("T")[0];
+  const [year, month] = today.split("-").map(Number);
+
+  const { data } = await supabase
+    .from("payroll_month_holidays")
+    .select("date")
+    .eq("user_id", user.id)
+    .eq("year", year)
+    .eq("month", month)
+    .eq("date", today)
+    .maybeSingle();
+
+  setTodayIsHoliday(!!data);
+};
+
 
   const fetchDepartments = async () => {
     try {
@@ -100,6 +142,27 @@ const [editCheckOut, setEditCheckOut] = useState("");
     }
   };
 
+
+  const checkHoliday = async (date: string) => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const [year, month] = date.split("-").map(Number);
+
+  const { data } = await supabase
+    .from("payroll_month_holidays")
+    .select("date")
+    .eq("user_id", user.id)
+    .eq("year", year)
+    .eq("month", month)
+    .eq("date", date)
+    .maybeSingle();
+
+  setIsHoliday(!!data);
+};
+
+
+
   const fetchEmployees = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -119,41 +182,56 @@ const [editCheckOut, setEditCheckOut] = useState("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+  e.preventDefault();
+  if (submitLoading) return; // already submitting
+  setSubmitLoading(true);
 
-      const employee = employees.find(e => e.id === formData.employee_id);
+  if (isHoliday) {
+  toast.error("Attendance cannot be marked on holidays");
+  setSubmitLoading(false);
+  return;
+}
 
-      const { error } = await supabase.from("attendance").insert([{
-        employee_id: formData.employee_id,
-        date: formData.date,
-        check_in: formData.check_in || null,
-        check_out: formData.check_out || null,
-        status: formData.status,
-        notes: formData.notes || null,
-        department_id: employee?.department_id || null,
-        user_id: user.id,
-      }] as any);
 
-      if (error) throw error;
 
-      toast.success("Attendance recorded successfully!");
-      setOpen(false);
-      setFormData({
-        employee_id: "",
-        date: new Date().toISOString().split('T')[0],
-        check_in: "",
-        check_out: "",
-        status: "present",
-        notes: "",
-      });
-      fetchAttendance();
-    } catch (error: any) {
-      toast.error("Error recording attendance");
-    }
-  };
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const employee = employees.find(e => e.id === formData.employee_id);
+
+    const { error } = await supabase.from("attendance").insert([{
+      employee_id: formData.employee_id,
+      date: formData.date,
+      check_in: formData.check_in || null,
+      check_out: formData.check_out || null,
+      status: formData.status,
+      notes: formData.notes || null,
+      department_id: employee?.department_id || null,
+      user_id: user.id,
+    }] as any);
+
+    if (error) throw error;
+
+    toast.success("Attendance recorded successfully!");
+    setOpen(false);
+    setFormData({
+  employee_id: "",
+  date: new Date().toISOString().split('T')[0],
+  check_in: "",
+  check_out: "", // keep in state, but user can’t enter it
+  status: "present",
+  notes: "",
+});
+
+    await fetchAttendance();
+  } catch (error: any) {
+    toast.error("Error recording attendance");
+  } finally {
+    setSubmitLoading(false);
+  }
+};
+
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
@@ -170,14 +248,32 @@ const [editCheckOut, setEditCheckOut] = useState("");
     return emp ? `${emp.first_name} ${emp.last_name}` : "-";
   };
 
+  // Employees already marked attendance for selected date
+const markedEmployeeIds = new Set(
+  attendance
+    .filter(a => a.date === formData.date)
+    .map(a => a.employee_id)
+);
+
+// Employees available for marking attendance
+const availableEmployees = employees.filter(
+  emp => !markedEmployeeIds.has(emp.id)
+);
+
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 w-full">
         <div>
           <h1 className="text-3xl font-bold">Attendance</h1>
           <p className="text-muted-foreground">Track employee attendance</p>
         </div>
-        <div className="flex gap-3 items-center">
+         {isHoliday && (
+    <div className="p-3 rounded-lg bg-red-100 text-red-700 font-medium">
+      🎉 Today is a Holiday. Attendance is disabled.
+    </div>
+  )}
+        <div className="flex flex-wrap gap-3 items-center w-full md:w-auto">
           <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
             <SelectTrigger className="w-[180px]">
               <SelectValue />
@@ -202,12 +298,19 @@ const [editCheckOut, setEditCheckOut] = useState("");
             />
           </div>
           <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Mark Attendance
-            </Button>
-          </DialogTrigger>
+          {isHoliday ? (
+  <Button disabled className="opacity-50 cursor-not-allowed">
+    Holiday – Attendance Disabled
+  </Button>
+) : (
+  <DialogTrigger asChild>
+    <Button>
+      <Plus className="h-4 w-4 mr-2" />
+      Mark Attendance
+    </Button>
+  </DialogTrigger>
+)}
+
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Mark Attendance</DialogTitle>
@@ -220,12 +323,19 @@ const [editCheckOut, setEditCheckOut] = useState("");
                     <SelectValue placeholder="Select employee" />
                   </SelectTrigger>
                   <SelectContent>
-                    {employees.map((emp) => (
-                      <SelectItem key={emp.id} value={emp.id}>
-                        {`${emp.first_name} ${emp.last_name}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
+  {availableEmployees.length === 0 ? (
+    <div className="px-3 py-2 text-sm text-muted-foreground">
+      All employees already marked for this date
+    </div>
+  ) : (
+    availableEmployees.map((emp) => (
+      <SelectItem key={emp.id} value={emp.id}>
+        {`${emp.first_name} ${emp.last_name}`}
+      </SelectItem>
+    ))
+  )}
+</SelectContent>
+
                 </Select>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -241,17 +351,19 @@ const [editCheckOut, setEditCheckOut] = useState("");
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="status">Status *</Label>
-                  <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="present">Present</SelectItem>
-                      <SelectItem value="absent">Absent</SelectItem>
-                      <SelectItem value="late">Late</SelectItem>
-                      <SelectItem value="halfday">Half Day</SelectItem>
-                    </SelectContent>
-                  </Select>
+<Select
+  value={formData.status}
+  onValueChange={(value) => setFormData({ ...formData, status: value })}
+>
+  <SelectTrigger>
+    <SelectValue />
+  </SelectTrigger>
+  <SelectContent>
+    <SelectItem value="present">Present</SelectItem>
+    <SelectItem value="halfday">Half Day</SelectItem>
+  </SelectContent>
+</Select>
+
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -264,15 +376,7 @@ const [editCheckOut, setEditCheckOut] = useState("");
                     onChange={(e) => setFormData({ ...formData, check_in: e.target.value })}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="check_out">Check Out</Label>
-                  <Input
-                    id="check_out"
-                    type="time"
-                    value={formData.check_out}
-                    onChange={(e) => setFormData({ ...formData, check_out: e.target.value })}
-                  />
-                </div>
+                
               </div>
               <div className="space-y-2">
                 <Label htmlFor="notes">Notes</Label>
@@ -287,7 +391,14 @@ const [editCheckOut, setEditCheckOut] = useState("");
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit">Mark Attendance</Button>
+                <Button
+  type="submit"
+  disabled={submitLoading}
+  className={submitLoading ? "opacity-50 cursor-not-allowed" : ""}
+>
+  {submitLoading ? "Saving..." : "Mark Attendance"}
+</Button>
+
               </div>
             </form>
           </DialogContent>
@@ -295,7 +406,7 @@ const [editCheckOut, setEditCheckOut] = useState("");
         </div>
       </div>
 
-      <div className="border rounded-lg">
+      <div className="border rounded-lg overflow-x-auto w-full max-w-full">
         <Table>
           <TableHeader>
             <TableRow>
@@ -310,7 +421,7 @@ const [editCheckOut, setEditCheckOut] = useState("");
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center">Loading...</TableCell>
+                <TableCell colSpan={6} className="text-center"><EduvancaLoader size={32} /></TableCell>
               </TableRow>
             ) : attendance.length === 0 ? (
               <TableRow>
@@ -326,8 +437,8 @@ const [editCheckOut, setEditCheckOut] = useState("");
                 <TableRow key={record.id}>
                   <TableCell className="font-medium">{getEmployeeName(record.employee_id)}</TableCell>
                   <TableCell>{new Date(record.date).toLocaleDateString()}</TableCell>
-                  <TableCell>{record.check_in || "-"}</TableCell>
-                  <TableCell>{record.check_out || "-"}</TableCell>
+                  <TableCell>{formatTime12h(record.check_in)}</TableCell>
+<TableCell>{formatTime12h(record.check_out)}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className={getStatusColor(record.status)}>
                       {record.status}
@@ -335,16 +446,22 @@ const [editCheckOut, setEditCheckOut] = useState("");
                   </TableCell>
                   <TableCell>
   <Button
-    variant="ghost"
-    size="sm"
-    onClick={() => {
-      setSelectedRecord(record);
-      setEditCheckOut(record.check_out || "");
-      setEditOpen(true);
-    }}
-  >
-    Edit
-  </Button>
+  variant="ghost"
+  size="sm"
+  disabled={!!record.check_out}
+  className={record.check_out ? "opacity-40 cursor-not-allowed" : ""}
+  onClick={() => {
+    if (record.check_out) return;
+
+    setSelectedRecord(record);
+    setEditCheckOut(record.check_out || "");
+    setEditHalfDay(record.status === "halfday");
+    setEditOpen(true);
+  }}
+>
+  Edit
+</Button>
+
 </TableCell>
 
                 </TableRow>
@@ -363,11 +480,26 @@ const [editCheckOut, setEditCheckOut] = useState("");
       <div className="space-y-2">
         <Label>Check Out Time</Label>
         <Input
-          type="time"
-          value={editCheckOut}
-          onChange={(e) => setEditCheckOut(e.target.value)}
-        />
+  type="time"
+  value={editCheckOut}
+  disabled={!!selectedRecord?.check_out}
+  className={selectedRecord?.check_out ? "opacity-50 cursor-not-allowed" : ""}
+  onChange={(e) => setEditCheckOut(e.target.value)}
+/>
+
       </div>
+
+      <div className="flex items-center gap-3">
+  <input
+    type="checkbox"
+    id="halfday"
+    checked={editHalfDay}
+    onChange={(e) => setEditHalfDay(e.target.checked)}
+    className="h-4 w-4"
+  />
+  <Label htmlFor="halfday">Mark as Half Day</Label>
+</div>
+
 
       <div className="flex justify-end gap-2">
         <Button variant="outline" onClick={() => setEditOpen(false)}>
@@ -386,8 +518,10 @@ const [editCheckOut, setEditCheckOut] = useState("");
     const { error } = await supabase
       .from("attendance")
       .update({
-        check_out: editCheckOut || null,
-      })
+  check_out: editCheckOut || null,
+  status: editHalfDay ? "halfday" : "present",
+})
+
       .eq("id", selectedRecord.id)
       .eq("user_id", user.id);   // REQUIRED FOR RLS
 

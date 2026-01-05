@@ -13,6 +13,7 @@ import { DetailViewDialog, DetailField } from "@/components/DetailViewDialog";
 import { DepartmentDetailDialog } from "@/components/DepartmentDetailDialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 interface Department {
   id: string;
@@ -91,10 +92,10 @@ const Departments = () => {
       if (!user) return;
 
       const { data, error } = await supabase
-        .from("employees")
-        .select("id, first_name, last_name")
-        .eq("user_id", user.id)
-        .eq("status", "active");
+  .from("employees")
+  .select("id, first_name, last_name, department_id")
+  .eq("user_id", user.id)
+  .eq("status", "active");
 
       if (error) throw error;
       setEmployees(data || []);
@@ -194,7 +195,11 @@ const Departments = () => {
       .eq("id", memberFormData.employee_id);
 
     toast.success("Member added successfully!");
-    setMemberFormData({ employee_id: "", role: "" });
+setMemberFormData({ employee_id: "", role: "" });
+
+// 🔥 Refresh UI immediately
+fetchEmployees(); // updates employee.department_id
+fetchDepartments(); // updates department list
 
   } catch (error) {
     toast.error("Error adding member");
@@ -240,12 +245,14 @@ const Departments = () => {
     <SelectValue placeholder="Select employee" />
   </SelectTrigger>
   <SelectContent>
-    {employees.map((emp) => (
+  {employees
+    .filter(emp => emp.department_id === null)   // ⬅ only free employees
+    .map(emp => (
       <SelectItem key={emp.id} value={emp.id}>
         {emp.first_name} {emp.last_name}
       </SelectItem>
     ))}
-  </SelectContent>
+</SelectContent>
 </Select>
 
               </div>
@@ -295,7 +302,7 @@ const Departments = () => {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center">Loading...</TableCell>
+                <TableCell colSpan={5} className="text-center"><EduvancaLoader size={32} /></TableCell>
               </TableRow>
             ) : departments.length === 0 ? (
               <TableRow>
@@ -376,12 +383,15 @@ const Departments = () => {
                   <SelectValue placeholder="Select employee" />
                 </SelectTrigger>
                 <SelectContent>
-                  {employees.map((emp) => (
-                    <SelectItem key={emp.id} value={emp.id}>
-                      {`${emp.first_name} ${emp.last_name}`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
+  {employees
+    .filter((emp) => !emp.department_id) // prevents adding if already in another department
+    .map((emp) => (
+      <SelectItem key={emp.id} value={emp.id}>
+        {`${emp.first_name} ${emp.last_name}`}
+      </SelectItem>
+    ))}
+</SelectContent>
+
               </Select>
             </div>
             <div className="space-y-2">

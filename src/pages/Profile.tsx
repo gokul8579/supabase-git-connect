@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { UserCircle, Mail, Calendar, Shield, Lock } from "lucide-react";
 import { toast } from "sonner";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 const Profile = () => {
   const [profile, setProfile] = useState<{
@@ -18,9 +19,11 @@ const Profile = () => {
   const [companySettings, setCompanySettings] = useState<any>(null);
   const [open, setOpen] = useState(false);
   const [passwordData, setPasswordData] = useState({
-    newPassword: "",
-    confirmPassword: "",
-  });
+  oldPassword: "",
+  newPassword: "",
+  confirmPassword: "",
+});
+
 
   useEffect(() => {
     fetchProfile();
@@ -44,38 +47,67 @@ const Profile = () => {
     setCompanySettings(companyData.data);
   };
 
-  const handleChangePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (passwordData.newPassword !== passwordData.confirmPassword) {
-      toast.error("Passwords do not match");
+  
+
+    const handleChangePassword = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  if (passwordData.newPassword !== passwordData.confirmPassword) {
+    toast.error("Passwords do not match");
+    return;
+  }
+
+  if (passwordData.newPassword.length < 6) {
+    toast.error("Password must be at least 6 characters");
+    return;
+  }
+
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user?.email) {
+      toast.error("Session expired. Please login again.");
       return;
     }
 
-    if (passwordData.newPassword.length < 6) {
-      toast.error("Password must be at least 6 characters");
-      return;
-    }
-
-    try {
-      const { error } = await supabase.auth.updateUser({
-        password: passwordData.newPassword
+    // 🔐 Verify OLD password
+    const { error: reauthError } =
+      await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: passwordData.oldPassword,
       });
 
-      if (error) throw error;
-
-      toast.success("Password changed successfully!");
-      setOpen(false);
-      setPasswordData({ newPassword: "", confirmPassword: "" });
-    } catch (error: any) {
-      toast.error("Error changing password: " + error.message);
+    if (reauthError) {
+      toast.error("Current password is incorrect");
+      return;
     }
-  };
+
+    // 🔁 Update password
+    const { error: updateError } = await supabase.auth.updateUser({
+      password: passwordData.newPassword,
+    });
+
+    if (updateError) throw updateError;
+
+    toast.success("Password changed successfully!");
+    setOpen(false);
+    setPasswordData({
+      oldPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    });
+  } catch (err: any) {
+    toast.error(err.message || "Error changing password");
+  }
+};
+
 
   if (!profile) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-lg">Loading...</div>
+        <div className="text-lg"><EduvancaLoader size={32} /></div>
       </div>
     );
   }
@@ -99,6 +131,19 @@ const Profile = () => {
               <DialogTitle>Change Password</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleChangePassword} className="space-y-4">
+              <div className="space-y-2">
+  <Label htmlFor="oldPassword">Current Password</Label>
+  <Input
+    id="oldPassword"
+    type="password"
+    value={passwordData.oldPassword}
+    onChange={(e) =>
+      setPasswordData({ ...passwordData, oldPassword: e.target.value })
+    }
+    required
+  />
+</div>
+
               <div className="space-y-2">
                 <Label htmlFor="newPassword">New Password</Label>
                 <Input

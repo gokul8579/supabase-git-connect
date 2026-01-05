@@ -44,9 +44,16 @@ export const PayrollAnalytics = ({ payroll, getEmployeeName }: PayrollAnalyticsP
   const [selectedMonthKey, setSelectedMonthKey] = useState<string | null>(null); // "month-year"
   const [attendanceSummary, setAttendanceSummary] = useState<Record<string, any>>({});
   const [loadingSummary, setLoadingSummary] = useState(false);
+  // --- Modal for payment details ---
+const [monthDetailOpen, setMonthDetailOpen] = useState(false);
+const [detailMonth, setDetailMonth] = useState<number | null>(null);
+const [detailYear, setDetailYear] = useState<number | null>(null);
+const [detailEmployees, setDetailEmployees] = useState<any[]>([]);
+
 
   // modal states for editing working days
   const [editOpen, setEditOpen] = useState(false);
+  const [holidayDates, setHolidayDates] = useState<string[]>([]);
   const [editForm, setEditForm] = useState({
     month: (new Date().getMonth() + 1),
     year: new Date().getFullYear(),
@@ -67,15 +74,42 @@ export const PayrollAnalytics = ({ payroll, getEmployeeName }: PayrollAnalyticsP
 
   // payments by month/date (same logic as before but quick derivation)
   const paymentsByMonth = useMemo(() => {
-    return payroll.filter(r => r.status === "paid").reduce((acc: Record<string, { month: string; amount: number; count: number }>, rec) => {
-      const key = `${rec.month}-${rec.year}`;
-      const title = new Date(rec.year, rec.month - 1).toLocaleDateString('default', { month: 'long', year: 'numeric' });
-      if (!acc[key]) acc[key] = { month: title, amount: 0, count: 0 };
-      acc[key].amount += rec.net_salary || 0;
-      acc[key].count += 1;
-      return acc;
-    }, {});
-  }, [payroll]);
+  return payroll
+    .filter(r => r.status === "paid")
+    .reduce(
+      (
+        acc: Record<
+          string,
+          { title: string; amount: number; count: number; month: number; year: number }
+        >
+      ,
+        rec
+      ) => {
+        const key = `${rec.month}-${rec.year}`;
+        const title = new Date(rec.year, rec.month - 1).toLocaleDateString("default", {
+          month: "long",
+          year: "numeric",
+        });
+
+        if (!acc[key]) {
+          acc[key] = {
+            title,
+            amount: 0,
+            count: 0,
+            month: rec.month,
+            year: rec.year,
+          };
+        }
+
+        acc[key].amount += rec.net_salary || 0;
+        acc[key].count += 1;
+
+        return acc;
+      },
+      {}
+    );
+}, [payroll]);
+
 
   useEffect(() => {
     // whenever selected month changes, fetch attendance summary for that month
@@ -228,6 +262,29 @@ export const PayrollAnalytics = ({ payroll, getEmployeeName }: PayrollAnalyticsP
         if (error) throw error;
       }
 
+      // ---- SAVE HOLIDAY DATES ----
+await supabase
+  .from("payroll_month_holidays")
+  .delete()
+  .eq("user_id", user.id)
+  .eq("month", editForm.month)
+  .eq("year", editForm.year);
+
+if (holidayDates.length > 0) {
+  await supabase
+    .from("payroll_month_holidays")
+    .insert(
+      holidayDates.map(date => ({
+        user_id: user.id,
+        month: editForm.month,
+        year: editForm.year,
+        date,
+        type: "holiday",
+      }))
+    );
+}
+
+
       toast.success("Working days saved");
       setEditOpen(false);
       fetchWorkingDays();
@@ -283,6 +340,47 @@ export const PayrollAnalytics = ({ payroll, getEmployeeName }: PayrollAnalyticsP
       return mb - ma;
     });
   }, [payroll, workingDaysRows]);
+
+  // when user clicks a month under Payments by Month
+const openMonthDetails = (month: number, year: number) => {
+  setDetailMonth(month);
+  setDetailYear(year);
+
+  // filter payroll records for this month & year
+  const filtered = payroll.filter(
+    (r) => r.month === month && r.year === year
+  );
+
+  const list = filtered
+  .sort((a, b) => (a.payment_date ? new Date(a.payment_date).getTime() : 0) -
+                  (b.payment_date ? new Date(b.payment_date).getTime() : 0))
+  .map((rec) => ({
+    name: getEmployeeName(rec.employee_id),
+    salary: rec.net_salary,
+    status: rec.status,
+    payment_date: rec.payment_date,
+  }));
+
+
+  setDetailEmployees(list);
+  setMonthDetailOpen(true);
+};
+
+
+const fetchMonthHolidays = async (month: number, year: number) => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { data } = await supabase
+    .from("payroll_month_holidays")
+    .select("date")
+    .eq("user_id", user.id)
+    .eq("month", month)
+    .eq("year", year);
+
+  setHolidayDates(data?.map(d => d.date) || []);
+};
+
 
   return (
     <div className="space-y-6">
@@ -364,6 +462,59 @@ export const PayrollAnalytics = ({ payroll, getEmployeeName }: PayrollAnalyticsP
                     <Textarea value={editForm.notes} onChange={(e) => setEditForm(f => ({ ...f, notes: e.target.value }))} rows={3} />
                   </div>
 
+                  {/* Holiday Date Mapping */}
+<div className="space-y-2">
+  <Label>Map Holidays (click dates)</Label>
+
+  <div className="grid grid-cols-7 gap-1 text-xs">
+    {(() => {
+      const daysInMonth = new Date(editForm.year, editForm.month, 0).getDate();
+      const maxAllowed =
+        Number(editForm.holidays || 0) +
+        Number(editForm.special_holidays || 0);
+
+      return Array.from({ length: daysInMonth }, (_, i) => {
+        const day = i + 1;
+        const dateStr = `${editForm.year}-${String(editForm.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        const isSelected = holidayDates.includes(dateStr);
+
+        return (
+          <button
+            key={dateStr}
+            type="button"
+            onClick={() => {
+              setHolidayDates(prev => {
+                if (prev.includes(dateStr)) {
+                  return prev.filter(d => d !== dateStr);
+                }
+
+                if (prev.length >= maxAllowed) {
+                  toast.error(`You can select only ${maxAllowed} holiday dates`);
+                  return prev;
+                }
+
+                return [...prev, dateStr];
+              });
+            }}
+            className={`p-2 rounded border text-center ${
+              isSelected
+                ? "bg-red-100 border-red-400 text-red-700"
+                : "bg-muted hover:bg-accent"
+            }`}
+          >
+            {day}
+          </button>
+        );
+      });
+    })()}
+  </div>
+
+  <p className="text-xs text-muted-foreground">
+    Selected {holidayDates.length} / {Number(editForm.holidays || 0) + Number(editForm.special_holidays || 0)} days
+  </p>
+</div>
+
+
                   <div className="flex justify-end gap-2">
                     <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
                     <Button onClick={saveWorkingDays}>Save</Button>
@@ -398,8 +549,20 @@ export const PayrollAnalytics = ({ payroll, getEmployeeName }: PayrollAnalyticsP
                       notes: row.notes || "",
                     });
                     setEditOpen(true);
+                    fetchMonthHolidays(row.month, row.year);
                   }}>Edit</Button>
-                  <Button variant="outline" size="sm" onClick={() => setSelectedMonthKey(`${row.month}-${row.year}`)}>View Month</Button>
+                  <Button
+  variant="outline"
+  size="sm"
+  onClick={() => {
+    const key = `${row.month}-${row.year}`;
+    setSelectedMonthKey(key);
+    fetchMonthHolidays(row.month, row.year);
+  }}
+>
+  View Month
+</Button>
+
                 </div>
               </div>
             ))}
@@ -419,9 +582,15 @@ export const PayrollAnalytics = ({ payroll, getEmployeeName }: PayrollAnalyticsP
               Object.values(paymentsByMonth)
                 .sort((a, b) => b.amount - a.amount)
                 .map(m => (
-                  <div key={m.month} className="flex justify-between items-center border-b py-2">
+                  <div
+  key={m.month}
+  onClick={() => openMonthDetails(m.month, m.year)}
+
+  className="flex justify-between items-center border-b py-2 cursor-pointer hover:bg-accent/20"
+>
+
                     <div>
-                      <div className="font-medium">{m.month}</div>
+                      <div className="font-medium">{m.title}</div>
                       <div className="text-sm text-muted-foreground">{m.count} employees</div>
                     </div>
                     <div className="font-bold text-green-600">{formatIndianCurrency(m.amount)}</div>
@@ -463,6 +632,45 @@ export const PayrollAnalytics = ({ payroll, getEmployeeName }: PayrollAnalyticsP
                   );
                 })()}
               </div>
+
+              {/* Holiday Calendar */}
+<div className="col-span-1 space-y-2">
+  <div className="text-sm font-medium">Holiday Calendar</div>
+
+  <div className="grid grid-cols-7 gap-1 text-xs">
+    {(() => {
+      const [m, y] = selectedMonthKey!.split("-").map(Number);
+      const daysInMonth = new Date(y, m, 0).getDate();
+
+      return Array.from({ length: daysInMonth }, (_, i) => {
+        const day = i + 1;
+        const dateStr = `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        const isHoliday = holidayDates.includes(dateStr);
+
+        return (
+          <button
+            key={dateStr}
+            onClick={() =>
+              setHolidayDates(prev =>
+                prev.includes(dateStr)
+                  ? prev.filter(d => d !== dateStr)
+                  : [...prev, dateStr]
+              )
+            }
+            className={`p-2 rounded border text-center ${
+              isHoliday
+                ? "bg-red-100 border-red-400 text-red-700"
+                : "bg-muted hover:bg-accent"
+            }`}
+          >
+            {day}
+          </button>
+        );
+      });
+    })()}
+  </div>
+</div>
+
 
               {/* Middle: employee list (scrollable) */}
               <div className="col-span-1 md:col-span-2">
@@ -513,6 +721,56 @@ export const PayrollAnalytics = ({ payroll, getEmployeeName }: PayrollAnalyticsP
           </CardContent>
         </Card>
       )}
+      <Dialog open={monthDetailOpen} onOpenChange={setMonthDetailOpen}>
+  <DialogContent className="max-w-lg">
+    <DialogHeader>
+      <DialogTitle>
+        {detailMonth && detailYear
+          ? new Date(detailYear, detailMonth - 1).toLocaleDateString("default", {
+              month: "long",
+              year: "numeric",
+            })
+          : ""}
+      </DialogTitle>
+    </DialogHeader>
+
+    {detailEmployees.length === 0 ? (
+      <p className="text-center text-muted-foreground py-6">
+        No payments for this month.
+      </p>
+    ) : (
+      <div className="space-y-3 max-h-80 overflow-y-auto">
+        {detailEmployees.map((emp, idx) => (
+          <div key={idx} className="p-3 border rounded-lg bg-muted/20">
+            <div className="flex justify-between">
+              <span className="font-medium">{emp.name}</span>
+
+              <span
+                className={`px-2 py-1 rounded text-xs ${
+                  emp.status === "paid"
+                    ? "bg-green-100 text-green-700"
+                    : "bg-yellow-100 text-yellow-700"
+                }`}
+              >
+                {emp.status}
+              </span>
+            </div>
+
+            <p className="mt-1 text-sm">
+  Salary Paid: <strong>₹{emp.salary?.toLocaleString("en-IN")}</strong>
+</p>
+
+<p className="text-xs text-muted-foreground mt-1">
+  Payment Date: <strong>{emp.payment_date ? new Date(emp.payment_date).toLocaleDateString("en-IN") : "—"}</strong>
+</p>
+
+          </div>
+        ))}
+      </div>
+    )}
+  </DialogContent>
+</Dialog>
+
     </div>
   );
 };

@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Users, UserCog } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface DepartmentMember {
   id: string;
@@ -81,6 +82,37 @@ export const DepartmentDetailDialog = ({
     }
   };
 
+    const handleRemoveMember = async (memberId: string, employeeId: string) => {
+  try {
+    // 1. Delete from department_members
+    const { error: delErr } = await supabase
+      .from("department_members")
+      .delete()
+      .eq("id", memberId);
+
+    if (delErr) throw delErr;
+
+    // 2. Reset employee department
+    await supabase
+      .from("employees")
+      .update({
+        department_id: null,
+        position: null
+      })
+      .eq("id", employeeId);
+
+    toast.success("Member removed!");
+
+    // 🔥 Refresh members list IMMEDIATELY
+    fetchMembers(); 
+  } catch (err) {
+    console.error(err);
+    toast.error("Error removing member");
+  }
+};
+
+
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
@@ -122,27 +154,39 @@ export const DepartmentDetailDialog = ({
                   <div className="space-y-3">
                     {members.map((member) => (
                       <div
-                        key={member.id}
-                        className="p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-                      >
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <p className="font-semibold text-base">
-                              {member.employee.first_name} {member.employee.last_name}
-                            </p>
-                            {member.employee.position && (
-                              <p className="text-sm text-muted-foreground mt-1">
-                                {member.employee.position}
-                              </p>
-                            )}
-                          </div>
-                          {member.role && (
-                            <Badge variant="secondary" className="ml-2">
-                              {member.role}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
+  key={member.id}
+  className="p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+>
+  <div className="flex items-start justify-between">
+    <div>
+      <p className="font-semibold text-base">
+        {member.employee.first_name} {member.employee.last_name}
+      </p>
+      {member.employee.position && (
+        <p className="text-sm text-muted-foreground mt-1">
+          {member.employee.position}
+        </p>
+      )}
+    </div>
+
+    <div className="flex items-center gap-2">
+      {member.role && (
+        <Badge variant="secondary" className="ml-2">
+          {member.role}
+        </Badge>
+      )}
+
+      <button
+  onClick={() => handleRemoveMember(member.id, member.employee_id)}
+  className="text-xs px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 transition"
+>
+  Remove
+</button>
+
+    </div>
+  </div>
+</div>
+
                     ))}
                   </div>
                 )}

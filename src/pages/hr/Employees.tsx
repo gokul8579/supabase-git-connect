@@ -13,6 +13,7 @@ import { Plus, Users, Eye } from "lucide-react";
 import { DetailViewDialog } from "@/components/DetailViewDialog";
 import { SearchFilter } from "@/components/SearchFilter";
 import { IndianNumberInput } from "@/components/ui/indian-number-input";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 interface Employee {
   id: string;
@@ -169,8 +170,6 @@ const Employees = () => {
           last_name: data.last_name,
           email: data.email,
           phone: data.phone,
-          department_id: data.department_id,
-          position: data.position,
           hire_date: data.hire_date,
           salary: data.salary ? parseFloat(data.salary) : null,
           status: data.status,
@@ -373,7 +372,7 @@ const Employees = () => {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center">Loading...</TableCell>
+                <TableCell colSpan={6} className="text-center"><EduvancaLoader size={32} /></TableCell>
               </TableRow>
             ) : filteredEmployees.length === 0 ? (
               <TableRow>
@@ -426,14 +425,6 @@ const Employees = () => {
             { label: "Last Name", value: selectedEmployee.last_name, type: "text", fieldName: "last_name" },
             { label: "Email", value: selectedEmployee.email, type: "text", fieldName: "email" },
             { label: "Phone", value: selectedEmployee.phone, type: "text", fieldName: "phone" },
-            { 
-              label: "Department", 
-              value: selectedEmployee.department_id, 
-              type: "select", 
-              fieldName: "department_id",
-              selectOptions: departments.map(d => ({ value: d.id, label: d.name }))
-            },
-            { label: "Position", value: selectedEmployee.position, type: "text", fieldName: "position" },
             { label: "Hire Date", value: selectedEmployee.hire_date, type: "date", fieldName: "hire_date" },
             { label: "Salary (₹)", value: selectedEmployee.salary, type: "currency", fieldName: "salary" },
             { 

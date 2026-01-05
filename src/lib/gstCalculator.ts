@@ -30,8 +30,14 @@ export function calculateLineItemAmounts(
     totalTax = (amount * gstRate) / 100;
   }
 
-  const cgstAmount = parseFloat((totalTax / 2).toFixed(2));
-  const sgstAmount = parseFloat((totalTax - cgstAmount).toFixed(2));
+  // Proper even split (fixes 7.63 vs 7.62 issue)
+let cgst = totalTax / 2;
+let sgst = totalTax / 2;
+
+// ALWAYS round both equally
+const cgstAmount = parseFloat(cgst.toFixed(2));
+const sgstAmount = parseFloat(sgst.toFixed(2));
+
 
   return {
     taxableValue: parseFloat(taxableValue.toFixed(2)),

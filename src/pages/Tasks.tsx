@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
 import { DetailViewDialog, DetailField } from "@/components/DetailViewDialog";
+import { EduvancaLoader } from "@/components/EduvancaLoader";
 
 interface Task {
   id: string;
@@ -55,17 +56,37 @@ const Tasks = () => {
       if (error) throw error;
       
       // Sort by priority (high first) then by due date (nearest first)
-      const sorted = (data || []).sort((a, b) => {
-        const priorityOrder: Record<string, number> = { high: 3, medium: 2, low: 1 };
-        const priorityDiff = (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
-        if (priorityDiff !== 0) return priorityDiff;
-        
-        if (!a.due_date) return 1;
-        if (!b.due_date) return -1;
-        return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
-      });
-      
-      setTasks(sorted);
+      // FINAL SORTING: 
+// 1. Pending + In Progress tasks first
+// 2. Completed tasks LAST
+// 3. Within pending, sort by priority then due date
+
+const sorted = (data || []).sort((a, b) => {
+  // STATUS ORDER: pending/in_progress → cancelled → completed
+  const statusOrder: Record<string, number> = {
+    pending: 3,
+    in_progress: 3,
+    cancelled: 2,
+    completed: 1,
+  };
+
+  const statusDiff = statusOrder[b.status] - statusOrder[a.status];
+  if (statusDiff !== 0) return statusDiff;
+
+  // PRIORITY ORDER inside pending/in_progress
+  const priorityOrder: Record<string, number> = { high: 3, medium: 2, low: 1 };
+  const priorityDiff = (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+  if (priorityDiff !== 0) return priorityDiff;
+
+  // DUE DATE ORDER inside pending/in_progress
+  if (!a.due_date) return 1;
+  if (!b.due_date) return -1;
+  return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+});
+
+setTasks(sorted);
+
+
 
       if (error) throw error;
       setTasks(data || []);
@@ -121,6 +142,24 @@ const Tasks = () => {
     }
   };
 
+  const handleStatusInlineUpdate = async (taskId: string, newStatus: string) => {
+  try {
+    const { error } = await supabase
+      .from("tasks")
+      .update({ status: newStatus })
+      .eq("id", taskId);
+
+    if (error) throw error;
+
+    toast.success("Task status updated");
+
+    fetchTasks();
+  } catch (error) {
+    toast.error("Error updating status");
+  }
+};
+
+
   const getPriorityColor = (priority: string) => {
     const colors: Record<string, string> = {
       low: "bg-blue-100 text-blue-800",
@@ -131,14 +170,15 @@ const Tasks = () => {
   };
 
   const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = {
-      pending: "bg-orange-100 text-orange-800",
-      in_progress: "bg-blue-100 text-blue-800",
-      completed: "bg-green-100 text-green-800",
-      cancelled: "bg-gray-100 text-gray-800",
-    };
-    return colors[status] || "bg-gray-100 text-gray-800";
+  const colors: Record<string, string> = {
+    pending: "bg-orange-100 text-orange-700 border-orange-200",
+    in_progress: "bg-blue-100 text-blue-700 border-blue-200",
+    completed: "bg-green-100 text-green-700 border-green-200",
+    cancelled: "bg-red-100 text-red-700 border-red-200",
   };
+
+  return colors[status] || "bg-gray-100 text-gray-700 border-gray-200";
+};
 
   const handleTaskClick = (task: Task) => {
     setSelectedTask(task);
@@ -235,12 +275,12 @@ const Tasks = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 w-full">
         <div>
           <h1 className="text-3xl font-bold">Tasks & Follow-ups</h1>
           <p className="text-muted-foreground">Manage your to-do list and follow-ups</p>
         </div>
-        <div className="flex gap-2 items-center">
+        <div className="flex flex-wrap gap-2 items-center w-full md:w-auto">
           <Input 
             type="date" 
             value={dueDateFilter} 
@@ -332,7 +372,7 @@ const Tasks = () => {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-12"></TableHead>
+            
               <TableHead>Task</TableHead>
               <TableHead>Priority</TableHead>
               <TableHead>Status</TableHead>
@@ -343,7 +383,7 @@ const Tasks = () => {
             {loading ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center">
-                  Loading...
+                  <EduvancaLoader size={32} />
                 </TableCell>
               </TableRow>
             ) : tasks.length === 0 ? (
@@ -359,12 +399,7 @@ const Tasks = () => {
                   className={`cursor-pointer hover:bg-muted/50 ${task.status === "completed" ? "opacity-50" : ""}`}
                   onClick={() => handleTaskClick(task)}
                 >
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={task.status === "completed"}
-                      onCheckedChange={() => handleStatusToggle(task.id, task.status)}
-                    />
-                  </TableCell>
+                  
                   <TableCell>
                     <div>
                       <div className={`font-medium ${task.status === "completed" ? "line-through" : ""}`}>
@@ -380,11 +415,27 @@ const Tasks = () => {
                       {task.priority}
                     </Badge>
                   </TableCell>
-                  <TableCell>
-                    <Badge className={getStatusColor(task.status)} variant="outline">
-                      {task.status.replace("_", " ")}
-                    </Badge>
-                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+  <Select
+    value={task.status}
+    onValueChange={(value) => handleStatusInlineUpdate(task.id, value)}
+  >
+    <SelectTrigger
+  className={`h-8 text-xs w-32 justify-center rounded-md border ${getStatusColor(
+    task.status
+  )}`}
+>
+  <SelectValue />
+</SelectTrigger>
+
+    <SelectContent>
+      <SelectItem value="pending">Pending</SelectItem>
+      <SelectItem value="in_progress">In Progress</SelectItem>
+      <SelectItem value="completed">Completed</SelectItem>
+      <SelectItem value="cancelled">Cancelled</SelectItem>
+    </SelectContent>
+  </Select>
+</TableCell>
                   <TableCell>
                     {task.due_date
                       ? new Date(task.due_date).toLocaleDateString()

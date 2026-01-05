@@ -16,6 +16,7 @@ export interface DetailField {
   badgeColor?: string;
   fieldName?: string;
   selectOptions?: { value: string; label: string }[];
+  disabled?: boolean;
 }
 
 interface DetailViewDialogProps {
@@ -39,7 +40,9 @@ export const DetailViewDialog = ({ open, onOpenChange, title, fields, onEdit, on
       const data: Record<string, any> = {};
       fields.forEach(field => {
         if (field.fieldName) {
-          data[field.fieldName] = field.value || "";
+          data[field.fieldName] =
+  field.value !== undefined && field.value !== null ? field.value : "";
+
         }
       });
       setEditData(data);
@@ -120,11 +123,13 @@ const formatDateTime = (value: any) => {
           />
         );
       case "select":
-        return (
-          <Select
-            value={editData[field.fieldName] || ""}
-            onValueChange={(value) => setEditData({ ...editData, [field.fieldName!]: value })}
-          >
+  return (
+    <Select
+      disabled={field.disabled}   // ✅ ADD THIS
+      value={editData[field.fieldName] || ""}
+      onValueChange={(value) => setEditData({ ...editData, [field.fieldName!]: value })}
+    >
+
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -180,6 +185,10 @@ const formatDateTime = (value: any) => {
     }
   };
 
+  const discountAmount =
+  Number(fields.find(f => f.fieldName === "discount_amount")?.value || 0);
+
+
   const renderCustomField = (value: any) => {
   if (!value || value === "No items found" || !Array.isArray(value) || value.length === 0) {
     return (
@@ -191,16 +200,46 @@ const formatDateTime = (value: any) => {
 
   // Recalculate totals
   const subtotal = value.reduce(
-    (sum: number, item: any) => sum + (Number(item.price) * Number(item.qty)),
-    0
-  );
+  (sum: number, item: any) =>
+    sum + Number(item.taxable_value ?? item.price * item.qty),
+  0
+);
 
-  const total = value.reduce(
-    (sum: number, item: any) => sum + Number(item.total),
-    0
-  );
+const totalTax = value.reduce(
+  (sum: number, item: any) => sum + Number(item.total_tax ?? 0),
+  0
+);
 
-  const tax = total - subtotal;
+// ✅ NEW: Split GST
+const totalCGST = value.reduce((sum: number, item: any) => {
+  const tax = Number(item.total_tax ?? 0);
+  const cgstRate = Number(item.cgst_percent ?? 0);
+  const sgstRate = Number(item.sgst_percent ?? 0);
+  const totalRate = cgstRate + sgstRate;
+
+  if (!totalRate) return sum;
+  return sum + (tax * (cgstRate / totalRate));
+}, 0);
+
+const totalSGST = value.reduce((sum: number, item: any) => {
+  const tax = Number(item.total_tax ?? 0);
+  const cgstRate = Number(item.cgst_percent ?? 0);
+  const sgstRate = Number(item.sgst_percent ?? 0);
+  const totalRate = cgstRate + sgstRate;
+
+  if (!totalRate) return sum;
+  return sum + (tax * (sgstRate / totalRate));
+}, 0);
+
+const totalBeforeDiscount = value.reduce(
+  (sum: number, item: any) => sum + Number(item.total),
+  0
+);
+
+const total = Math.max(0, totalBeforeDiscount - discountAmount);
+
+
+
 
   return (
     <div className="mt-4 border rounded-lg bg-white shadow-sm w-full col-span-2">
@@ -230,8 +269,12 @@ const formatDateTime = (value: any) => {
               const totalAmt = Number(item.total);
 
               // Calculate tax % & amount
-              const taxAmount = totalAmt - (price * qty);
-              const taxPercent = ((taxAmount / (price * qty)) * 100) || 0;
+              const taxAmount = Number(item.total_tax || 0);
+const gstPercent =
+  item.cgst_percent && item.sgst_percent
+    ? item.cgst_percent + item.sgst_percent
+    : 0;
+
 
               return (
                 <tr key={index} className="border-b">
@@ -240,11 +283,12 @@ const formatDateTime = (value: any) => {
                   <td className="py-2 text-right">₹{price.toFixed(2)}</td>
 
                   <td className="py-2 text-right">
-                    ₹{taxAmount.toFixed(2)}
-                    <span className="text-muted-foreground ml-1">
-                      ({taxPercent.toFixed(2)}%)
-                    </span>
-                  </td>
+  ₹{taxAmount.toFixed(2)}
+  <span className="text-muted-foreground ml-1">
+    ({gstPercent}%)
+  </span>
+</td>
+
 
                   <td className="py-2 text-right font-medium">₹{totalAmt.toFixed(2)}</td>
                 </tr>
@@ -256,21 +300,44 @@ const formatDateTime = (value: any) => {
 
       {/* Summary Footer */}
       <div className="p-4 border-t text-sm space-y-2">
-        <div className="flex justify-between">
-          <span>Subtotal</span>
-          <span>₹{subtotal.toFixed(2)}</span>
-        </div>
 
-        <div className="flex justify-between">
-          <span>Total GST</span>
-          <span>₹{tax.toFixed(2)}</span>
-        </div>
+  <div className="flex justify-between">
+    <span>Subtotal</span>
+    <span>₹{subtotal.toFixed(2)}</span>
+  </div>
 
-        <div className="flex justify-between pt-2 border-t font-semibold text-base">
-          <span>Grand Total</span>
-          <span>₹{total.toFixed(2)}</span>
-        </div>
-      </div>
+  {discountAmount > 0 && (
+  <div className="flex justify-between text-red-600">
+    <span>Discount</span>
+    <span>- ₹{discountAmount.toFixed(2)}</span>
+  </div>
+)}
+
+
+  {/* ✅ NEW CGST */}
+  <div className="flex justify-between text-muted-foreground">
+    <span>CGST</span>
+    <span>₹{totalCGST.toFixed(2)}</span>
+  </div>
+
+  {/* ✅ NEW SGST */}
+  <div className="flex justify-between text-muted-foreground">
+    <span>SGST</span>
+    <span>₹{totalSGST.toFixed(2)}</span>
+  </div>
+
+  <div className="flex justify-between">
+    <span>Total GST</span>
+    <span>₹{totalTax.toFixed(2)}</span>
+  </div>
+
+  <div className="flex justify-between pt-2 border-t font-semibold text-base">
+    <span>Grand Total</span>
+    <span>₹{total.toFixed(2)}</span>
+  </div>
+
+</div>
+
     </div>
   );
 };
@@ -281,7 +348,18 @@ const formatDateTime = (value: any) => {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+      <DialogContent
+  className="
+    w-[calc(100vw-24px)]
+    sm:w-full
+    sm:max-w-2xl
+    max-h-[85vh]
+    overflow-y-auto
+    rounded-xl
+    px-4 sm:px-6
+  "
+>
+
         <DialogHeader className="flex flex-row items-center justify-between">
           <DialogTitle>{title}</DialogTitle>
           {onEdit && (
@@ -306,14 +384,16 @@ const formatDateTime = (value: any) => {
     }
   >
               <Label className="text-muted-foreground text-sm">{field.label}</Label>
-              {isEditing ? (
-                renderEditField(field)
-              ) : (
-                <div className="font-medium">
-  {field.type === "custom" ? renderCustomField(field.value) : renderValue(field)}
-</div>
+              {field.type === "custom" ? (
+  renderCustomField(field.value)
+) : isEditing ? (
+  renderEditField(field)
+) : (
+  <div className="font-medium">
+    {renderValue(field)}
+  </div>
+)}
 
-              )}
             </div>
           ))}
         </div>
