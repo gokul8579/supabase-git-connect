@@ -190,7 +190,7 @@ const Contracts = () => {
 
       const { error } = await supabase
         .from("contracts")
-        .update({ status: newStatus })
+        .update({ status: newStatus as "pending" | "active" | "expired" | "cancelled" })
         .eq("id", contractId);
 
       if (error) throw error;

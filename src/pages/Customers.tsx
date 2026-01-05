@@ -121,6 +121,8 @@ cin_number: "",
         country: "",
         postal_code: "",
         notes: "",
+        gst_number: "",
+        cin_number: "",
       });
       fetchCustomers();
     } catch (error: any) {

@@ -21,12 +21,16 @@ interface Product {
   description: string | null;
   unit_price: number;
   quantity_in_stock: number;
-  catalogue: string | null;
+  catalogue?: string | null;
   price_book_id?: string | null;
   weight: number | null;
   weight_unit: string | null;
   created_at: string;
-  gst_rate?: number; // ADD THIS
+  gst_rate?: number | null;
+  cost_price?: number | null;
+  product_type?: string | null;
+  reorder_level?: number | null;
+  vendor_id?: string | null;
 }
 
 const Products = () => {
@@ -72,7 +76,7 @@ const Products = () => {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setProducts(data || []);
+      setProducts((data || []).map(p => ({ ...p, catalogue: null })) as Product[]);
     } catch (error: any) {
       toast.error("Error fetching products");
     } finally {

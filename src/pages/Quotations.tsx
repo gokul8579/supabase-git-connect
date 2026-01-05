@@ -105,7 +105,7 @@ const [quotationToDelete, setQuotationToDelete] = useState<Quotation | null>(nul
     discount_amount: "0",
     notes: "",
   });
-  const [lineItems, setLineItems] = useState([
+  const [lineItems, setLineItems] = useState<Array<{ type: "existing" | "service"; product_id: string; description: string; quantity: number; unit_price: number; cgst_percent: number; sgst_percent: number }>>([
   { type: "service", product_id: "", description: "", quantity: 1, unit_price: 0, cgst_percent: 9, sgst_percent: 9 }
 ]);
 
@@ -259,7 +259,7 @@ const handleDeleteQuotation = async () => {
         })
       );
 
-      setQuotations(quotationsWithOrders);
+      setQuotations(quotationsWithOrders as Quotation[]);
     } catch (error: any) {
       toast.error("Error fetching quotations");
     } finally {

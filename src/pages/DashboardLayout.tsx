@@ -357,7 +357,7 @@ useEffect(() => {
         </main>
       </div>
             {/* AI CHATBOT – GLOBAL FLOATING UI */}
-      <AiChatButton onClick={() => setOpen(true)} />
+      <AiChatButton onClick={() => setOpen(true)} isChatOpen={open} />
       {open && <AiChatPanel onClose={() => setOpen(false)} />}
 
       <StickyNotes />

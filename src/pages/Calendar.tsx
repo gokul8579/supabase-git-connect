@@ -452,24 +452,25 @@ export default function CalendarPage() {
           description: form.description,
           due_date: baseDate,
           user_id: user.id,
-          status: "pending",
-          priority: form.priority,
+          status: "pending" as const,
+          priority: form.priority as "low" | "medium" | "high",
         });
       } else if (form.type === "meeting" || form.type === "call") {
         await supabase.from("calls").insert({
           title: form.title,
-          call_type: form.type,
+          call_type: form.type as "meeting" | "call",
           scheduled_at: startISO,
           notes: form.description,
-          status: "scheduled",
+          status: "scheduled" as const,
           user_id: user.id,
         });
       } else if (form.type === "ticket") {
         await supabase.from("tickets").insert({
           subject: form.title,
-          description: form.description,
+          ticket_number: `TKT-${Date.now()}`,
+          description: form.description || "",
           deadline: startISO,
-          priority: form.priority,
+          priority: form.priority as "low" | "medium" | "high",
           user_id: user.id,
         });
       } else if (form.type === "sales_order") {
@@ -477,15 +478,15 @@ export default function CalendarPage() {
           order_number: `SO-${Date.now()}`,
           expected_delivery_date: startISO,
           total_amount: Number(form.amount || 0),
-          status: "pending",
+          status: "draft" as const,
           user_id: user.id,
         });
       } else if (form.type === "purchase_order") {
         await supabase.from("purchase_orders").insert({
           po_number: `PO-${Date.now()}`,
-          expected_receiving_date: startISO,
+          expected_delivery_date: startISO,
           total_amount: Number(form.amount || 0),
-          status: "pending",
+          status: "pending" as const,
           user_id: user.id,
         });
       } else {
@@ -495,8 +496,8 @@ export default function CalendarPage() {
           description: form.description,
           due_date: baseDate,
           user_id: user.id,
-          status: "pending",
-          priority: form.priority,
+          status: "pending" as const,
+          priority: form.priority as "low" | "medium" | "high",
         });
       }
 
@@ -523,27 +524,27 @@ export default function CalendarPage() {
         await supabase.from("tasks").update({
           title: changes.title ?? selectedEvent.title,
           description: changes.description ?? ext.details,
-          status: changes.status ?? ext.status,
+          status: (changes.status ?? ext.status) as "pending" | "in_progress" | "completed" | "cancelled",
         }).eq("id", sourceId);
       } else if (type === "meeting" || type === "call") {
         await supabase.from("calls").update({
           title: changes.title ?? selectedEvent.title,
           notes: changes.description ?? ext.details,
-          status: changes.status ?? ext.status,
+          status: (changes.status ?? ext.status) as "scheduled" | "completed" | "cancelled" | "missed",
         }).eq("id", sourceId);
       } else if (type === "ticket") {
         await supabase.from("tickets").update({
           subject: changes.title ?? selectedEvent.title,
           description: changes.description ?? ext.details,
-          status: changes.status ?? ext.status,
+          status: (changes.status ?? ext.status) as "open" | "in_progress" | "resolved" | "closed" | "waiting_for_customer",
         }).eq("id", sourceId);
       } else if (type === "sales_order") {
         await supabase.from("sales_orders").update({
-          status: changes.status ?? ext.status,
+          status: (changes.status ?? ext.status) as "draft" | "confirmed" | "shipped" | "delivered" | "cancelled",
         }).eq("id", sourceId);
       } else if (type === "purchase_order") {
         await supabase.from("purchase_orders").update({
-          status: changes.status ?? ext.status,
+          status: (changes.status ?? ext.status) as string,
         }).eq("id", sourceId);
       }
       toast.success("Event updated");

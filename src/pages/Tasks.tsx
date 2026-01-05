@@ -146,7 +146,7 @@ setTasks(sorted);
   try {
     const { error } = await supabase
       .from("tasks")
-      .update({ status: newStatus })
+      .update({ status: newStatus as "pending" | "in_progress" | "completed" | "cancelled" })
       .eq("id", taskId);
 
     if (error) throw error;
