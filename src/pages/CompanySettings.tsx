@@ -7,8 +7,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { EduvancaLoader } from "@/components/EduvancaLoader";
+import { StaffManagement } from "@/components/StaffManagement";
+import { useStaff } from "@/context/StaffContext";
+import { Building, Users } from "lucide-react";
 
 const CompanySettings = () => {
   const [loading, setLoading] = useState(true);
@@ -187,12 +191,30 @@ onboarding_completed_at: new Date().toISOString(),
     return <div className="text-center py-12"><EduvancaLoader size={32} /></div>;
   }
 
+  const { isAdmin } = useStaff();
+
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
         <h1 className="text-3xl font-bold">Company Settings</h1>
-        <p className="text-muted-foreground">Manage your company information for documents</p>
+        <p className="text-muted-foreground">Manage your company information and team</p>
       </div>
+
+      <Tabs defaultValue="company" className="w-full">
+        <TabsList className="mb-4">
+          <TabsTrigger value="company" className="flex items-center gap-2">
+            <Building className="h-4 w-4" />
+            Company Info
+          </TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger value="staff" className="flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Staff Management
+            </TabsTrigger>
+          )}
+        </TabsList>
+
+        <TabsContent value="company">
 
       <form onSubmit={handleSubmit}>
         <Card>
@@ -432,6 +454,14 @@ onboarding_completed_at: new Date().toISOString(),
           </CardContent>
         </Card>
       </form>
+        </TabsContent>
+
+        {isAdmin && (
+          <TabsContent value="staff">
+            <StaffManagement />
+          </TabsContent>
+        )}
+      </Tabs>
     </div>
   );
 };

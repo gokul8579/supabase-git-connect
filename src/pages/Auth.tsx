@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Card,
   CardContent,
@@ -19,6 +20,7 @@ import {
   TrendingUp,
   Users,
   DollarSign,
+  UserCog,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -29,6 +31,7 @@ const Auth = () => {
   const [password, setPassword] = useState("");
   const [forgotPassword, setForgotPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [isStaffLogin, setIsStaffLogin] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -41,14 +44,34 @@ const Auth = () => {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) throw error;
 
-      toast.success("Signed in successfully!");
+      // Check if this is a staff login
+      if (isStaffLogin && data.user) {
+        const { data: staffData, error: staffError } = await supabase
+          .from("staff_accounts")
+          .select("*")
+          .eq("staff_user_id", data.user.id)
+          .eq("is_active", true)
+          .maybeSingle();
+
+        if (staffError || !staffData) {
+          await supabase.auth.signOut();
+          toast.error("This is not a valid staff account or it has been deactivated");
+          setLoading(false);
+          return;
+        }
+
+        toast.success(`Welcome back, ${staffData.staff_name}!`);
+      } else {
+        toast.success("Signed in successfully!");
+      }
+
       navigate("/dashboard");
     } catch (error: any) {
       toast.error(error.message || "Error signing in");
@@ -149,17 +172,42 @@ const Auth = () => {
         >
           <Card className="rounded-3xl shadow-2xl bg-white text-black">
             <CardHeader className="text-center space-y-2">
-              <div className="mx-auto p-3 bg-red-600 rounded-xl w-fit">
-  <BarChart3 className="h-8 w-8 text-white" />
-</div>
-
+              <div className={`mx-auto p-3 rounded-xl w-fit ${isStaffLogin ? 'bg-blue-600' : 'bg-red-600'}`}>
+                {isStaffLogin ? (
+                  <UserCog className="h-8 w-8 text-white" />
+                ) : (
+                  <BarChart3 className="h-8 w-8 text-white" />
+                )}
+              </div>
 
               <CardTitle className="text-3xl font-bold">
                 Eduvanca One
               </CardTitle>
               <CardDescription>
-                {forgotPassword ? "Reset your password" : "Sign in to your account"}
+                {forgotPassword 
+                  ? "Reset your password" 
+                  : isStaffLogin 
+                    ? "Staff Login - Limited access account" 
+                    : "Sign in to your account"
+                }
               </CardDescription>
+
+              {/* Staff Login Toggle */}
+              {!forgotPassword && (
+                <div className="flex items-center justify-center gap-3 pt-2">
+                  <Label htmlFor="staff-mode" className="text-sm text-muted-foreground cursor-pointer">
+                    Admin
+                  </Label>
+                  <Switch
+                    id="staff-mode"
+                    checked={isStaffLogin}
+                    onCheckedChange={setIsStaffLogin}
+                  />
+                  <Label htmlFor="staff-mode" className="text-sm text-muted-foreground cursor-pointer">
+                    Staff
+                  </Label>
+                </div>
+              )}
             </CardHeader>
 
             <CardContent>
@@ -172,6 +220,7 @@ const Auth = () => {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
+                      placeholder={isStaffLogin ? "staff@company.com" : "admin@company.com"}
                     />
                   </div>
 
@@ -209,11 +258,17 @@ const Auth = () => {
 
                   <Button
                     type="submit"
-                    className="w-full bg-red-600 hover:bg-red-700"
+                    className={`w-full ${isStaffLogin ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-600 hover:bg-red-700'}`}
                     disabled={loading}
                   >
-                    {loading ? "Signing in..." : "Sign In"}
+                    {loading ? "Signing in..." : isStaffLogin ? "Sign In as Staff" : "Sign In"}
                   </Button>
+
+                  {isStaffLogin && (
+                    <p className="text-xs text-center text-muted-foreground mt-2">
+                      Staff accounts are created by administrators. Contact your admin if you need access.
+                    </p>
+                  )}
                 </form>
               ) : (
                 <form onSubmit={handleForgotPassword} className="space-y-4">
